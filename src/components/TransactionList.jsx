@@ -10,6 +10,8 @@ function TransactionList() {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [editId, setEditId] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [editForm, setEditForm] = useState({
     id: '',
     name: '',
@@ -56,6 +58,9 @@ function TransactionList() {
     setFiltered(filteredTxns);
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtered]);
 
   useEffect(() => {
     fetchTransactions();
@@ -64,6 +69,13 @@ function TransactionList() {
   useEffect(() => {
     applyFilter();
   }, [startDate, endDate]);
+  
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+
+  const paginated = filtered.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <div className="container mt-4">
@@ -115,7 +127,7 @@ function TransactionList() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((txn) => (
+              {paginated.map((txn) => (
                 <tr key={txn.id}>
                   {editId === txn.id ? (
                     <>
@@ -215,6 +227,25 @@ function TransactionList() {
             </tbody>
           </table>
 
+          <div className="d-flex justify-content-between align-items-center mt-3">
+            <button
+              className="btn btn-outline-primary"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((prev) => prev - 1)}
+            >
+              ← Previous
+            </button>
+
+            <span>Page {currentPage} of {totalPages}</span>
+
+            <button
+              className="btn btn-outline-primary"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+            >
+              Next →
+            </button>
+          </div>  
         </div>
       )}
     </div>
