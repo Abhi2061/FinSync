@@ -82,30 +82,30 @@ function TransactionList() {
       <h2>📋 Transactions</h2>
 
       {/* Date Range Filter */}
-      <div className="row g-3 align-items-center my-3">
-        <div className="col-auto">
-          <label className="col-form-label">From:</label>
-        </div>
-        <div className="col-auto">
+      <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+        {/* From date */}
+        <div className="d-flex align-items-center" style={{ flex: 1 }}>
+          <label className="me-2 fw-medium">From:</label>
           <DatePicker
             selected={startDate}
             onChange={(date) => setStartDate(date)}
             dateFormat="dd/MM/yyyy"
-            className="form-control"
+            className="form-control form-control-sm"
             placeholderText="Start Date"
-            />
+            style={{ width: '160px' }}
+          />
+        </div>
 
-        </div>
-        <div className="col-auto">
-          <label className="col-form-label">To:</label>
-        </div>
-        <div className="col-auto">
+        {/* To date */}
+        <div className="d-flex align-items-center justify-content-end" style={{ flex: 1 }}>
+          <label className="me-2 fw-medium">To:</label>
           <DatePicker
             selected={endDate}
             onChange={(date) => setEndDate(date)}
-            dateFormat="dd-MM-yyyy"
-            className="form-control"
+            dateFormat="dd/MM/yyyy"
+            className="form-control form-control-sm"
             placeholderText="End Date"
+            style={{ width: '160px' }}
           />
         </div>
       </div>
@@ -114,18 +114,19 @@ function TransactionList() {
       {filtered.length === 0 ? (
         <p className="text-muted">No transactions found for selected range.</p>
       ) : (
-        <div className="table-responsive">
+        <div className="table-responsive" style={{ overflowX: 'auto' }}>
           <table className="table table-bordered table-hover">
             <thead className="table-light">
               <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Date</th>
-                <th className="text-end">Amount (₹)</th>
-                <th>Actions</th> 
+                <th style={{ minWidth: '100px' }}>Name</th>
+                <th style={{ minWidth: '80px' }}>Type</th>
+                <th style={{ minWidth: '100px' }}>Category</th>
+                <th style={{ minWidth: '90px' }}>Date</th>
+                <th className="text-end" style={{ minWidth: '100px' }}>Amount (₹)</th>
+                <th style={{ minWidth: '100px' }}>Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {paginated.map((txn) => (
                 <tr key={txn.id}>
@@ -134,14 +135,14 @@ function TransactionList() {
                       <td>
                         <input
                           type="text"
-                          className="form-control"
+                          className="form-control form-control-sm"
                           value={editForm.name}
                           onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                         />
                       </td>
                       <td>
                         <select
-                          className="form-select"
+                          className="form-select form-select-sm"
                           value={editForm.type}
                           onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
                         >
@@ -152,7 +153,7 @@ function TransactionList() {
                       <td>
                         <input
                           type="text"
-                          className="form-control"
+                          className="form-control form-control-sm"
                           value={editForm.category}
                           onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
                         />
@@ -160,7 +161,7 @@ function TransactionList() {
                       <td>
                         <input
                           type="date"
-                          className="form-control"
+                          className="form-control form-control-sm"
                           value={editForm.date}
                           onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
                         />
@@ -168,7 +169,7 @@ function TransactionList() {
                       <td>
                         <input
                           type="number"
-                          className="form-control"
+                          className="form-control form-control-sm"
                           value={editForm.amount}
                           onChange={(e) =>
                             setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })
@@ -197,27 +198,29 @@ function TransactionList() {
                       <td>{txn.category}</td>
                       <td>{new Date(txn.date).toLocaleDateString('en-IN')}</td>
                       <td className="text-end">{txn.amount.toFixed(2)}</td>
-                      <td>
-                        <button
-                          className="btn btn-sm btn-outline-danger me-1"
-                          onClick={async () => {
-                            if (window.confirm("Are you sure you want to delete this transaction?")) {
-                              await deleteTransaction(txn.id);
-                              await fetchTransactions();
-                            }
-                          }}
-                        >
-                          🗑️
-                        </button>
-                        <button
-                          className="btn btn-sm btn-outline-primary"
-                          onClick={() => {
-                            setEditId(txn.id);
-                            setEditForm({ ...txn });
-                          }}
-                        >
-                          ✏️
-                        </button>
+                      <td className="text-nowrap">
+                        <div className="d-flex gap-1">
+                          <button
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={async () => {
+                              if (window.confirm("Are you sure you want to delete this transaction?")) {
+                                await deleteTransaction(txn.id);
+                                await fetchTransactions();
+                              }
+                            }}
+                          >
+                            🗑️
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={() => {
+                              setEditId(txn.id);
+                              setEditForm({ ...txn });
+                            }}
+                          >
+                            ✏️
+                          </button>
+                        </div>
                       </td>
                     </>
                   )}
