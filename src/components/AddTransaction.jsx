@@ -3,6 +3,8 @@ import { addTransaction, getCategories, addCategory } from '../utils/db';
 import { v4 as uuidv4 } from 'uuid';
 import 'react-datepicker/dist/react-datepicker.css';
 import DatePicker from 'react-datepicker';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function AddTransaction() {
   const [form, setForm] = useState({
@@ -27,7 +29,7 @@ function AddTransaction() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.category || !form.date || !form.amount) {
-      alert("All fields are required!");
+      toast.warning("All fields are required");
       return;
     }
 
@@ -39,13 +41,14 @@ function AddTransaction() {
     };
 
     await addTransaction(newTxn);
-    alert("Transaction saved!");
+    toast.success("Transaction added successfully");
     setForm({ name: '', type: 'expense', category: '', date: new Date().toISOString().split('T')[0], amount: '' });
   };
 
   return (
     <div className="container mt-4">
       <h2 className="mb-3">➕ Add Transaction</h2>
+      <ToastContainer position="bottom-right" autoClose={3000} />
       <form onSubmit={handleSubmit} className="row g-3">
 
         <div className="col-md-6">

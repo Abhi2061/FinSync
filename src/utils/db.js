@@ -49,9 +49,15 @@ export const getTransactionsByDateRange = async (start, end) => {
 };
 
 export const deleteTransaction = async (id) => {
-  const db = await initDB();
-  const tx = db.transaction('transactions', 'readwrite');
-  await tx.store.delete(id);
-  await tx.done;
+  try {
+    const db = await initDB();
+    const tx = db.transaction('transactions', 'readwrite');
+    await tx.store.delete(id);
+    await tx.done;
+  } catch (error) {
+    throw new Error("Failed to delete transaction");
+  }
 };
+
+
 

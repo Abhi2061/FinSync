@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pie } from 'react-chartjs-2';
+import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -146,13 +146,31 @@ function Dashboard() {
         <div className="text-center text-muted mt-4">No data found</div>
       ) : (
         <div className="mb-4" style={{ maxWidth: 400, margin: '0 auto' }}>
-          <Pie
+          <Doughnut
             data={chartData}
             options={{
               plugins: {
                 legend: {
                   display: true,
-                  position: 'bottom' // ✅ show below the chart
+                  position: 'bottom', // ✅ show below the chart
+                  labels: {
+                    generateLabels: (chart) => {
+                      const data = chart.data;
+                      const dataset = data.datasets[0];
+
+                      return data.labels.map((label, index) => {
+                        const value = dataset.data[index];
+                        const backgroundColor = dataset.backgroundColor[index];
+
+                        return {
+                          text: `${label}: ₹${value}`,
+                          fillStyle: backgroundColor,
+                          strokeStyle: backgroundColor,
+                          index,
+                        };
+                      });
+                    }
+                  }
                 }
               }
             }}

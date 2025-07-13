@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { initDB } from '../utils/db';
 import DatePicker from 'react-datepicker';
-import { deleteTransaction } from '../utils/db';
+import { deleteTransaction, getCategories } from '../utils/db';
 import 'react-datepicker/dist/react-datepicker.css';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { confirmAlert } from 'react-confirm-alert';
+import 'react-confirm-alert/src/react-confirm-alert.css';
 
 function TransactionList() {
   const [transactions, setTransactions] = useState([]);
@@ -12,6 +16,7 @@ function TransactionList() {
   const [editId, setEditId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [categories, setCategories] = useState([]);
   const [editForm, setEditForm] = useState({
     id: '',
     name: '',
@@ -22,12 +27,20 @@ function TransactionList() {
   });
 
   const handleUpdate = async () => {
-    const db = await initDB();
-    const tx = db.transaction('transactions', 'readwrite');
-    await tx.store.put(editForm);
-    await tx.done;
-    setEditId(null);
-    await fetchTransactions();
+    try {
+      const db = await initDB();
+      const tx = db.transaction('transactions', 'readwrite');
+      await tx.store.put(editForm);
+      await tx.done;
+
+      setEditId(null);
+      await fetchTransactions();
+
+      toast.success("Transaction updated successfully");
+    } catch (error) {
+      console.error("Update failed:", error);
+      toast.error("Failed to update transaction");
+    }
   };
 
   const fetchTransactions = async () => {
@@ -59,6 +72,14 @@ function TransactionList() {
   };
 
   useEffect(() => {
+    const fetchCategories = async () => {
+      const result = await getCategories(); // returns array from IndexedDB
+      setCategories(result);
+    };
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [filtered]);
 
@@ -80,6 +101,7 @@ function TransactionList() {
   return (
     <div className="container mt-4">
       <h2>📋 Transactions</h2>
+      <ToastContainer position="bottom-right" autoClose={3000} />
 
       {/* Date Range Filter */}
       <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
@@ -152,12 +174,18 @@ function TransactionList() {
                           </select>
                         </td>
                         <td>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
+                          <select
+                            className="form-select form-select-sm"
                             value={editForm.category}
-                            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                          />
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, category: e.target.value })
+                            }
+                          >
+                            <option value="">Select category</option>
+                            {categories.map((cat, idx) => (
+                              <option key={idx} value={cat.name}>{cat.name}</option>
+                            ))}
+                          </select>
                         </td>
                         <td>
                           <input
@@ -203,11 +231,25 @@ function TransactionList() {
                           <div className="d-flex gap-1">
                             <button
                               className="btn btn-sm btn-outline-danger"
-                              onClick={async () => {
-                                if (window.confirm("Are you sure you want to delete this transaction?")) {
-                                  await deleteTransaction(txn.id);
-                                  await fetchTransactions();
-                                }
+                              onClick={() => {
+                                confirmAlert({
+                                  title: 'Confirm Deletion',
+                                  message: 'Are you sure you want to delete this transaction?',
+                                  buttons: [
+                                    {
+                                      label: 'Yes',
+                                      onClick: async () => {
+                                        await deleteTransaction(txn.id);
+                                        await fetchTransactions();
+                                        toast.success("Transaction deleted successfully");
+                                      }
+                                    },
+                                    {
+                                      label: 'No',
+                                      onClick: () => toast.info("Deletion cancelled")
+                                    }
+                                  ]
+                                });
                               }}
                             >
                               🗑️
