@@ -114,122 +114,123 @@ function TransactionList() {
       {filtered.length === 0 ? (
         <p className="text-muted">No transactions found for selected range.</p>
       ) : (
-        <div className="table-responsive" style={{ overflowX: 'auto' }}>
-          <table className="table table-bordered table-hover">
-            <thead className="table-light">
-              <tr>
-                <th style={{ minWidth: '100px' }}>Name</th>
-                <th style={{ minWidth: '80px' }}>Type</th>
-                <th style={{ minWidth: '100px' }}>Category</th>
-                <th style={{ minWidth: '90px' }}>Date</th>
-                <th className="text-end" style={{ minWidth: '100px' }}>Amount (₹)</th>
-                <th style={{ minWidth: '100px' }}>Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {paginated.map((txn) => (
-                <tr key={txn.id}>
-                  {editId === txn.id ? (
-                    <>
-                      <td>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <select
-                          className="form-select form-select-sm"
-                          value={editForm.type}
-                          onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
-                        >
-                          <option value="income">Income</option>
-                          <option value="expense">Expense</option>
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={editForm.category}
-                          onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="date"
-                          className="form-control form-control-sm"
-                          value={editForm.date}
-                          onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="form-control form-control-sm"
-                          value={editForm.amount}
-                          onChange={(e) =>
-                            setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })
-                          }
-                        />
-                      </td>
-                      <td>
-                        <button
-                          className="btn btn-sm btn-success me-1"
-                          onClick={handleUpdate}
-                        >
-                          ✅
-                        </button>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => setEditId(null)}
-                        >
-                          ❌
-                        </button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>{txn.name}</td>
-                      <td>{txn.type}</td>
-                      <td>{txn.category}</td>
-                      <td>{new Date(txn.date).toLocaleDateString('en-IN')}</td>
-                      <td className="text-end">{txn.amount.toFixed(2)}</td>
-                      <td className="text-nowrap">
-                        <div className="d-flex gap-1">
-                          <button
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={async () => {
-                              if (window.confirm("Are you sure you want to delete this transaction?")) {
-                                await deleteTransaction(txn.id);
-                                await fetchTransactions();
-                              }
-                            }}
-                          >
-                            🗑️
-                          </button>
-                          <button
-                            className="btn btn-sm btn-outline-primary"
-                            onClick={() => {
-                              setEditId(txn.id);
-                              setEditForm({ ...txn });
-                            }}
-                          >
-                            ✏️
-                          </button>
-                        </div>
-                      </td>
-                    </>
-                  )}
+        <div>
+          <div className="table-responsive" style={{ overflowX: 'auto' }}>
+            <table className="table table-bordered table-hover">
+              <thead className="table-light">
+                <tr>
+                  <th style={{ minWidth: '100px' }}>Name</th>
+                  <th style={{ minWidth: '80px' }}>Type</th>
+                  <th style={{ minWidth: '100px' }}>Category</th>
+                  <th style={{ minWidth: '90px' }}>Date</th>
+                  <th className="text-end" style={{ minWidth: '100px' }}>Amount (₹)</th>
+                  <th style={{ minWidth: '100px' }}>Actions</th>
                 </tr>
-              ))}
+              </thead>
 
-            </tbody>
-          </table>
+              <tbody>
+                {paginated.map((txn) => (
+                  <tr key={txn.id}>
+                    {editId === txn.id ? (
+                      <>
+                        <td>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="form-select form-select-sm"
+                            value={editForm.type}
+                            onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
+                          >
+                            <option value="income">Income</option>
+                            <option value="expense">Expense</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={editForm.category}
+                            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            value={editForm.date}
+                            onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            className="form-control form-control-sm"
+                            value={editForm.amount}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })
+                            }
+                          />
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-success me-1"
+                            onClick={handleUpdate}
+                          >
+                            ✅
+                          </button>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setEditId(null)}
+                          >
+                            ❌
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{txn.name}</td>
+                        <td>{txn.type}</td>
+                        <td>{txn.category}</td>
+                        <td>{new Date(txn.date).toLocaleDateString('en-IN')}</td>
+                        <td className="text-end">{txn.amount.toFixed(2)}</td>
+                        <td className="text-nowrap">
+                          <div className="d-flex gap-1">
+                            <button
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={async () => {
+                                if (window.confirm("Are you sure you want to delete this transaction?")) {
+                                  await deleteTransaction(txn.id);
+                                  await fetchTransactions();
+                                }
+                              }}
+                            >
+                              🗑️
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => {
+                                setEditId(txn.id);
+                                setEditForm({ ...txn });
+                              }}
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
 
+              </tbody>
+            </table>  
+          </div>
           <div className="d-flex justify-content-between align-items-center mt-3">
             <button
               className="btn btn-outline-primary"
@@ -248,7 +249,7 @@ function TransactionList() {
             >
               Next →
             </button>
-          </div>  
+          </div>
         </div>
       )}
     </div>
