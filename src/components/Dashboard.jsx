@@ -31,15 +31,12 @@ function Dashboard() {
     fetchTransactions();
   }, []);
 
-  const getFilteredExpenses = () => {
+  const getFilteredTransactions = () => {
     return transactions.filter((txn) => {
       const txnDate = new Date(txn.date);
-      return (
-        txn.type === 'expense' &&
-        (view === 'daily'
-          ? isSameDay(txnDate, selectedDate)
-          : isSameMonth(txnDate, selectedMonth))
-      );
+      return view === 'daily'
+        ? isSameDay(txnDate, selectedDate)
+        : isSameMonth(txnDate, selectedMonth);
     });
   };
 
@@ -68,8 +65,21 @@ function Dashboard() {
     };
   };
 
-  const expenses = getFilteredExpenses();
-  const chartData = generateChartData(expenses);
+  const filteredTxns = getFilteredTransactions();
+
+  const chartData = generateChartData(
+    filteredTxns.filter(txn => txn.type === 'expense')
+  );
+
+  const totalExpense = filteredTxns
+    .filter(txn => txn.type === 'expense')
+    .reduce((sum, txn) => sum + txn.amount, 0);
+
+  const totalIncome = filteredTxns
+    .filter(txn => txn.type === 'income')
+    .reduce((sum, txn) => sum + txn.amount, 0);
+
+  const balance = totalIncome - totalExpense;
 
   const handlePrev = () => {
     if (view === 'daily') {
@@ -142,10 +152,33 @@ function Dashboard() {
       </div>
 
         {/* Chart or no data */}
-      {expenses.length === 0 ? (
+      {filteredTxns.length === 0 ? (
         <div className="text-center text-muted mt-4">No data found</div>
       ) : (
         <div className="mb-4" style={{ maxWidth: 400, margin: '0 auto' }}>
+          <div className="card text-center p-2 bg-light border-0 shadow-sm mb-3">
+              {/* Summary Info */}
+            <div className="text-center mb-3">
+              {view === 'daily' ? (
+                <h6 className="fw-semibold text-danger">
+                  Total Expense: ₹{totalExpense.toLocaleString('en-IN')}
+                </h6>
+              ) : (
+                <div className="d-flex flex-column align-items-center gap-1">
+                  <h6 className="fw-semibold text-success">
+                    Income: ₹{totalIncome.toLocaleString('en-IN')}
+                  </h6>
+                  <h6 className="fw-semibold text-danger">
+                    Expense: ₹{totalExpense.toLocaleString('en-IN')}
+                  </h6>
+                  <h6 className={`fw-semibold ${balance >= 0 ? 'text-primary' : 'text-danger'}`}>
+                    Balance: ₹{balance.toLocaleString('en-IN')}
+                  </h6>
+                </div>
+              )}
+            </div>
+          </div>
+
           <Doughnut
             data={chartData}
             options={{
