@@ -7,6 +7,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { confirmAlert } from 'react-confirm-alert';
 import 'react-confirm-alert/src/react-confirm-alert.css';
+import { saveAs } from 'file-saver';
 
 function TransactionList() {
   const [transactions, setTransactions] = useState([]);
@@ -98,6 +99,37 @@ function TransactionList() {
     currentPage * itemsPerPage
   );
 
+  const handleExportCSV = () => {
+    // Use your filtered list if available, or fallback to all
+    const dataToExport = filtered;
+
+    if (dataToExport.length === 0) {
+      toast.info("No transactions to export");
+      return;
+    }
+
+    // Format data as CSV rows
+    const rows = [
+      ['Name', 'Type', 'Category', 'Date', 'Amount'], // headers
+      ...dataToExport.map(txn => [
+        txn.name,
+        txn.type,
+        txn.category,
+        new Date(txn.date).toLocaleDateString('en-IN'),
+        txn.amount
+      ])
+    ];
+
+    const csvContent = rows.map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], {
+      type: 'text/csv;charset=utf-8;',
+    });
+
+    const fileName = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+    saveAs(blob, fileName);
+  };
+
   return (
     <div className="container mt-4">
       <h2>📋 Transactions</h2>
@@ -131,6 +163,13 @@ function TransactionList() {
           />
         </div>
       </div>
+
+      <button
+        className="btn btn-outline-success btn-sm mb-2"
+        onClick={handleExportCSV}
+      >
+        ⬇️ Export to CSV
+      </button>
 
       {/* Transaction List */}
       {filtered.length === 0 ? (
