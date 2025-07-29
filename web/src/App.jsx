@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import AuthButton from './components/Auth';
 import AddTransaction from './components/AddTransaction';
 import TransactionList from './components/TransactionList';
 import Dashboard from './components/Dashboard';
+import 'react-toastify/dist/ReactToastify.css';
+import { ToastContainer } from 'react-toastify';
 
 function App() {
   const [activeView, setActiveView] = useState('add'); // 'add' | 'dashboard' | 'history'
@@ -12,7 +15,13 @@ function App() {
 
   return (
     <div className="container py-3">
-      <h1 className="text-center mb-4">FinSync</h1>
+      <ToastContainer position="top-right" autoClose={3000} />
+      <div className="d-flex align-items-center justify-content-between mb-4">
+        <div className="flex-grow-1 d-flex justify-content-center">
+          <h1 className="text-center mb-0" style={{ marginLeft: '50px' }}>FinSync</h1>
+        </div>
+        <AuthButton />
+      </div>
       <div className="d-flex justify-content-around gap-2 mb-3">
         <button
           className={`btn btn-sm w-100 ${activeView === 'add' ? 'btn-primary' : 'btn-outline-primary'}`}
@@ -38,7 +47,6 @@ function App() {
       {activeView === 'dashboard' && <Dashboard />}
       {activeView === 'history' && <TransactionList />}
     </div>
-
   );
 }
 
