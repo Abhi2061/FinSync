@@ -3,15 +3,14 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from 'firebase/firestore';
 
-
 const firebaseConfig = {
-  apiKey: "AIzaSyBaNknNO_3zH3DRzyAb6ZaDjs_v_b1EB3I",
-  authDomain: "finsync-abhi2061.firebaseapp.com",
-  projectId: "finsync-abhi2061",
-  storageBucket: "finsync-abhi2061.firebasestorage.app",
-  messagingSenderId: "626252229559",
-  appId: "1:626252229559:web:2ccf2adaa5f08c448bd632",
-  measurementId: "G-5RFHFHY461"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
