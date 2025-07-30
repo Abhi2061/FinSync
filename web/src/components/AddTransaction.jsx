@@ -37,10 +37,13 @@ function AddTransaction() {
       ...form,
       id: uuidv4(),
       amount: parseFloat(form.amount),
-      date: new Date(form.date).toISOString()
+      date: new Date(form.date).toISOString(),
+      lastModified: new Date().toISOString(),
+      deleted: false
     };
 
     await addTransaction(newTxn);
+
     toast.success("Transaction added successfully");
     setForm({ name: '', type: 'expense', category: '', date: new Date().toISOString().split('T')[0], amount: '' });
   };

@@ -52,10 +52,16 @@ export const deleteTransaction = async (id) => {
   try {
     const db = await initDB();
     const tx = db.transaction('transactions', 'readwrite');
-    await tx.store.delete(id);
+    const store = tx.objectStore('transactions');
+    const txn = await store.get(id);
+    if (txn) {
+      txn.deleted = true;
+      txn.lastModified = new Date().toISOString();
+      await store.put(txn);
+    }
     await tx.done;
   } catch (error) {
-    throw new Error("Failed to delete transaction");
+    throw new Error("Failed to soft delete transaction");
   }
 };
 

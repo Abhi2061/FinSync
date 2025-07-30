@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { auth } from '../firebase';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
+import { syncAll } from '../utils/cloudSync';
 import { toast } from 'react-toastify';
 import { confirmAlert } from 'react-confirm-alert';
 import 'react-confirm-alert/src/react-confirm-alert.css';
@@ -20,6 +21,7 @@ const AuthButton = () => {
     try {
       await signInWithPopup(auth, provider);
       toast.success("Logged in successfully");
+      await syncAll();
     } catch (error) {
       console.error('Login failed:', error);
       toast.error("Login failed");

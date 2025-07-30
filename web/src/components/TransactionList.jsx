@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { initDB } from '../utils/db';
 import DatePicker from 'react-datepicker';
 import { deleteTransaction, getCategories } from '../utils/db';
+import { syncAll } from '../utils/cloudSync';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -31,7 +32,10 @@ function TransactionList() {
     try {
       const db = await initDB();
       const tx = db.transaction('transactions', 'readwrite');
-      await tx.store.put(editForm);
+      await tx.store.put({
+        ...editForm,
+        lastModified: new Date().toISOString(),
+      });
       await tx.done;
 
       setEditId(null);
@@ -47,7 +51,8 @@ function TransactionList() {
   const fetchTransactions = async () => {
     const db = await initDB();
     const all = await db.getAll('transactions');
-    const sorted = all.sort((a, b) => new Date(b.date) - new Date(a.date));
+    const active = all.filter(txn => !txn.deleted); // Exclude soft-deleted transactions
+    const sorted = active.sort((a, b) => new Date(b.date) - new Date(a.date));
     setTransactions(sorted);
     setFiltered(sorted);
   };
@@ -164,12 +169,22 @@ function TransactionList() {
         </div>
       </div>
 
-      <button
-        className="btn btn-outline-success btn-sm mb-2"
-        onClick={handleExportCSV}
-      >
-        ⬇️ Export to CSV
-      </button>
+      {/* Export & Sync Buttons */}
+      <div className="d-flex mb-2">
+        <button
+          className="btn btn-outline-success btn-sm"
+          onClick={handleExportCSV}
+        >
+          ⬇️ Export to CSV
+        </button>
+        <button
+          className="btn btn-outline-info btn-sm ms-auto"
+          onClick={async () => { await syncAll() }}
+          title="Sync with cloud"
+        >
+          🔁
+        </button>
+      </div>
 
       {/* Transaction List */}
       {filtered.length === 0 ? (
