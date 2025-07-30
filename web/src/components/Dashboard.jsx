@@ -32,7 +32,7 @@ function Dashboard() {
   }, []);
 
   const getFilteredTransactions = () => {
-    return transactions.filter((txn) => {
+    return transactions.filter(txn => !txn.deleted).filter((txn) => {
       const txnDate = new Date(txn.date);
       return view === 'daily'
         ? isSameDay(txnDate, selectedDate)
