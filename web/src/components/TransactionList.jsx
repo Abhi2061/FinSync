@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { initDB } from '../utils/db';
 import DatePicker from 'react-datepicker';
 import { deleteTransaction, getCategories } from '../utils/db';
@@ -19,6 +20,7 @@ function TransactionList() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [categories, setCategories] = useState([]);
+  const [user, setUser] = useState(null);
   const [editForm, setEditForm] = useState({
     id: '',
     name: '',
@@ -27,6 +29,14 @@ function TransactionList() {
     date: '',
     amount: 0,
   });
+
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleUpdate = async () => {
     try {
@@ -181,12 +191,13 @@ function TransactionList() {
           className="btn btn-outline-info btn-sm ms-auto"
           onClick={async () => { await syncAll() }}
           title="Sync with cloud"
+          disabled={!user}
         >
           🔁
         </button>
       </div>
 
-      {/* Transaction List */}
+        {/* Transaction List */}
       {filtered.length === 0 ? (
         <p className="text-muted">No transactions found for selected range.</p>
       ) : (

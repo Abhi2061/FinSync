@@ -45,18 +45,18 @@ export const syncToFirestore = async () => {
 
   const localDB = await initDB();
 
-  // Step 1: Get all local transactions
+  // Get all local transactions
   const tx = localDB.transaction('transactions', 'readonly');
   const localTransactions = await tx.store.getAll();
 
-  // Step 2: Fetch all cloud transactions
+  // Fetch all cloud transactions
   const cloudRef = collection(db, 'users', user.uid, 'transactions');
   const cloudSnap = await getDocs(cloudRef);
   const cloudMap = new Map(cloudSnap.docs.map(d => [d.id, d.data()]));
 
   const updatedLocally = [];
 
-  // Step 3: Compare and collect updates (both local and cloud)
+  // Compare and collect updates (both local and cloud)
   for (const txn of localTransactions) {
     let updated = false;
 
@@ -88,7 +88,7 @@ export const syncToFirestore = async () => {
     }
   }
 
-  // Step 4: Safely update local database AFTER Firestore push
+  // Safely update local database AFTER Firestore push
   if (updatedLocally.length > 0) {
     const writeTx = localDB.transaction('transactions', 'readwrite');
     const store = writeTx.store;
@@ -143,18 +143,18 @@ export const syncCategoriesToFirestore = async () => {
 
   const localDB = await initDB();
 
-  // Step 1: Get all local categories
+  // Get all local categories
   const tx = localDB.transaction('categories', 'readonly');
   const localCategories = await tx.store.getAll();
 
-  // Step 2: Get all cloud categories
+  // Get all cloud categories
   const cloudRef = collection(db, 'users', user.uid, 'categories');
   const cloudSnap = await getDocs(cloudRef);
   const cloudMap = new Map(cloudSnap.docs.map(d => [d.id, d.data()]));
 
   const updatedLocally = [];
 
-  // Step 3: Sync logic
+  // Sync logic
   for (const cat of localCategories) {
     let updated = false;
 
@@ -184,7 +184,7 @@ export const syncCategoriesToFirestore = async () => {
     }
   }
 
-  // Step 4: Apply local updates after loop
+  // Apply local updates after loop
   if (updatedLocally.length > 0) {
     const writeTx = localDB.transaction('categories', 'readwrite');
     const store = writeTx.store;
