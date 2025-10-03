@@ -29,6 +29,8 @@ function TransactionList() {
     date: '',
     amount: 0,
   });
+  const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState([]);
 
   useEffect(() => {
     const auth = getAuth();
@@ -68,21 +70,26 @@ function TransactionList() {
   };
 
   const applyFilter = () => {
-    if (!startDate || !endDate) {
-        setFiltered(transactions);
-        return;
-    }
+    let filteredTxns = transactions;
 
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-
-    const filteredTxns = transactions.filter(txn => {
+    // Date filter
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filteredTxns = filteredTxns.filter(txn => {
         const txnDate = new Date(txn.date);
         return txnDate >= start && txnDate <= end;
-    });
+      });
+    }
+
+    // Category filter
+    if (selectedCategories.length > 0) {
+      filteredTxns = filteredTxns.filter(txn =>
+        selectedCategories.includes(txn.category)
+      );
+    }
 
     setFiltered(filteredTxns);
   };
@@ -106,6 +113,10 @@ function TransactionList() {
   useEffect(() => {
     applyFilter();
   }, [startDate, endDate]);
+
+  useEffect(() => {
+    applyFilter();
+  }, [selectedCategories]);
   
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
 
@@ -145,9 +156,20 @@ function TransactionList() {
     saveAs(blob, fileName);
   };
 
+  useEffect(() => {
+    if (!categoryFilterOpen) return;
+    const handleClick = (e) => {
+      if (!e.target.closest('.category-filter-dropdown')) {
+        setCategoryFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [categoryFilterOpen]);
+
   return (
     <div className="container mt-4">
-      <h2>📋 Transactions</h2>
+      <h2 className="mb-3 text-center">📋 Transactions</h2>
       <ToastContainer position="bottom-right" autoClose={3000} />
 
       {/* Date Range Filter */}
@@ -178,6 +200,69 @@ function TransactionList() {
           />
         </div>
       </div>
+      <div className="d-flex align-items-center justify-content-between mb-3 gap-2" style={{ flex: 1 }}>
+        <label className="me-2 fw-medium">Category:</label>
+        <div style={{ position: 'relative', width: '100%' }}>
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            style={{ minWidth: 120 }}
+            onClick={() => setCategoryFilterOpen((open) => !open)}
+          >
+            {selectedCategories.length === 0 ? "All Categories" : `${selectedCategories.length} selected`}
+          </button>
+          {categoryFilterOpen && (
+            <div
+              className="category-filter-dropdown"
+              style={{
+                position: 'absolute',
+                top: '110%',
+                left: 0,
+                zIndex: 10,
+                background: '#fff',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                padding: '8px',
+                minWidth: 180,
+                maxHeight: 220,
+                overflowY: 'auto'
+              }}
+            >
+              <div>
+                <label className="d-block mb-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedCategories.length === 0}
+                    onChange={() => setSelectedCategories([])}
+                  />{" "}
+                  All Categories
+                </label>
+                <hr className="my-1" />
+                {categories.map((cat) => (
+                  <label key={cat.id} className="d-block mb-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategories.includes(cat.name)}
+                      onChange={() => {
+                        if (selectedCategories.includes(cat.name)) {
+                          // Remove category
+                          const updated = selectedCategories.filter(c => c !== cat.name);
+                          setSelectedCategories(updated);
+                        } else {
+                          // Add category
+                          setSelectedCategories([...selectedCategories, cat.name]);
+                        }
+                      }}
+                    />{" "}
+                    {cat.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>      
 
       {/* Export & Sync Buttons */}
       <div className="d-flex mb-2">
