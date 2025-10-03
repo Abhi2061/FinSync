@@ -17,21 +17,54 @@ export const initDB = async () => {
   });
 };
 
-export const getCategories = async () => {
-  const db = await initDB();
-  return await db.getAll('categories');
-};
-
-export const addCategory = async (name) => {
+export const addCategory = async (cat) => {
   const db = await initDB();
   const tx = db.transaction('categories', 'readwrite');
   const store = tx.objectStore('categories');
   const index = store.index('name');
-  const existing = await index.get(name);
+  const existing = await index.get(cat.name);
   if (!existing) {
-    await store.add({ name });
+    await store.add({
+      ...cat,
+      lastModified: new Date().toISOString(),
+      deleted: false
+    });
   }
   await tx.done;
+};
+
+export const updateCategory = async (id, updates) => {
+  const db = await initDB();
+  const tx = db.transaction('categories', 'readwrite');
+  const store = tx.objectStore('categories');
+  const cat = await store.get(id);
+  if (cat) {
+    cat.name = updates.name;
+    cat.color = updates.color;
+    cat.lastModified = new Date().toISOString();
+    cat.deleted = false;
+    await store.put(cat);
+  }
+  await tx.done;
+};
+
+export const deleteCategory = async (id) => {
+  const db = await initDB();
+  const tx = db.transaction('categories', 'readwrite');
+  const store = tx.objectStore('categories');
+  const cat = await store.get(id);
+  if (cat) {
+    cat.deleted = true;
+    cat.lastModified = new Date().toISOString();
+    await store.put(cat);
+  }
+  await tx.done;
+};
+
+export const getCategories = async () => {
+  const db = await initDB();
+  const all = await db.getAll('categories');
+  return all.filter(cat => !cat.deleted);
 };
 
 export const addTransaction = async (txn) => {

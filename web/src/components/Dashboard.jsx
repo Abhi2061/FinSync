@@ -11,7 +11,8 @@ import {
   subMonths,
   addMonths,
 } from 'date-fns';
-import { initDB } from '../utils/db';
+import { initDB, getCategories } from '../utils/db';
+import CategoryManager from './CategoryManager';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
@@ -20,6 +21,7 @@ function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [view, setView] = useState('daily'); // 'daily' or 'monthly'
+  const [categories, setCategories] = useState([]);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -29,6 +31,10 @@ function Dashboard() {
       setTransactions(all);
     };
     fetchTransactions();
+  }, []);
+
+  useEffect(() => {
+    getCategories().then(setCategories);
   }, []);
 
   const getFilteredTransactions = () => {
@@ -47,23 +53,18 @@ function Dashboard() {
         (categoryMap[txn.category] || 0) + txn.amount;
     });
 
+    // Map category names to colors
+    const colorMap = {};
+    categories.forEach(cat => {
+      colorMap[cat.name] = cat.color || "#0d6efd";
+    });
+
     return {
       labels: Object.keys(categoryMap),
       datasets: [
         {
           data: Object.values(categoryMap),
-          backgroundColor: [
-            '#0d6efd',
-            '#dc3545',
-            '#ffc107',
-            '#20c997',
-            '#6610f2',
-            '#fd7e14',
-            '#4e485aff',
-            '#198754',
-            '#d63384',
-            '#88b9ebff',
-          ],
+          backgroundColor: Object.keys(categoryMap).map(catName => colorMap[catName] || "#0d6efd"),
         },
       ],
     };
@@ -214,6 +215,10 @@ function Dashboard() {
           />
         </div>
       )}
+
+      <div className="container py-2 ">
+        <CategoryManager />
+      </div>
     </div>
   );
 }
