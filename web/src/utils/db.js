@@ -23,12 +23,19 @@ export const addCategory = async (cat) => {
   const store = tx.objectStore('categories');
   const index = store.index('name');
   const existing = await index.get(cat.name);
+
   if (!existing) {
     await store.add({
       ...cat,
       lastModified: new Date().toISOString(),
       deleted: false
     });
+  } else if (existing.deleted) {
+    // Restore the deleted category
+    existing.color = cat.color;
+    existing.lastModified = new Date().toISOString();
+    existing.deleted = false;
+    await store.put(existing);
   }
   await tx.done;
 };

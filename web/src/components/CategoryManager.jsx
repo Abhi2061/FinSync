@@ -4,6 +4,10 @@ import {
   updateCategory,
   deleteCategory
 } from '../utils/db';
+import { ToastContainer, toast } from 'react-toastify';
+import { confirmAlert } from 'react-confirm-alert';
+import 'react-toastify/dist/ReactToastify.css';
+import 'react-confirm-alert/src/react-confirm-alert.css';
 
 import { useEffect, useState } from 'react';
 
@@ -22,31 +26,65 @@ function CategoryManager() {
   }, []);
 
   const handleAdd = async () => {
-    if (!newCat.trim()) return;
-    await addCategory({ name: newCat.trim(), color: newColor });
-    setNewCat('');
-    setNewColor(DEFAULT_COLOR);
-    setCategories(await getCategories());
+    if (!newCat.trim()) {
+      toast.warning("Category name required");
+      return;
+    }
+    try {
+      await addCategory({ name: newCat.trim(), color: newColor });
+      toast.success("Category added");
+      setNewCat('');
+      setNewColor(DEFAULT_COLOR);
+      setCategories(await getCategories());
+    } catch (error) {
+      toast.error("Failed to add category");
+    }
   };
 
   const handleUpdate = async (id) => {
-    if (!editName.trim()) return;
-    await updateCategory(id, { name: editName.trim(), color: editColor });
-    setEditId(null);
-    setEditName('');
-    setEditColor(DEFAULT_COLOR);
-    setCategories(await getCategories());
+    if (!editName.trim()) {
+      toast.warning("Category name required");
+      return;
+    }
+    try {
+      await updateCategory(id, { name: editName.trim(), color: editColor });
+      toast.success("Category updated");
+      setEditId(null);
+      setEditName('');
+      setEditColor(DEFAULT_COLOR);
+      setCategories(await getCategories());
+    } catch (error) {
+      toast.error("Failed to update category");
+    }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Delete this category?')) {
-      await deleteCategory(id);
-      setCategories(await getCategories());
-    }
+    confirmAlert({
+      title: 'Delete Category',
+      message: 'Are you sure you want to delete this category?',
+      buttons: [
+        {
+          label: 'Yes',
+          onClick: async () => {
+            try {
+              await deleteCategory(id);
+              toast.success("Category deleted");
+              setCategories(await getCategories());
+            } catch (error) {
+              toast.error("Failed to delete category");
+            }
+          }
+        },
+        {
+          label: 'No'
+        }
+      ]
+    });
   };
 
   return (
     <div className="card p-3 mb-4">
+      <ToastContainer position="bottom-right" autoClose={3000} />
       <h5 className="mb-3">Manage Categories</h5>
       <div className="d-flex mb-2 gap-2 align-items-center">
         <input
