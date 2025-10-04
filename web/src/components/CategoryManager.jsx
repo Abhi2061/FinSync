@@ -1,9 +1,11 @@
 import {
+  initDB,
   getCategories,
   addCategory,
   updateCategory,
   deleteCategory
 } from '../utils/db';
+import { syncAll } from '../utils/cloudSync';
 import { ToastContainer, toast } from 'react-toastify';
 import { confirmAlert } from 'react-confirm-alert';
 import 'react-toastify/dist/ReactToastify.css';
@@ -47,13 +49,42 @@ function CategoryManager() {
       return;
     }
     try {
+      // 1. Sync latest data from cloud
+      await syncAll();
+
+      // 2. Get old category name
+      const oldCat = categories.find(cat => cat.id === id);
+      const oldName = oldCat?.name;
+
+      // 3. Update category
       await updateCategory(id, { name: editName.trim(), color: editColor });
-      toast.success("Category updated");
+
+      // 4. Update all transactions with old category name
+      const db = await initDB();
+      const tx = db.transaction('transactions', 'readwrite');
+      const store = tx.objectStore('transactions');
+      const allTxns = await store.getAll();
+      let updatedCount = 0;
+      for (const txn of allTxns) {
+        if (txn.category === oldName) {
+          txn.category = editName.trim();
+          txn.lastModified = new Date().toISOString();
+          await store.put(txn);
+          updatedCount++;
+        }
+      }
+      await tx.done;
+
+      // 5. Sync changes to cloud
+      await syncAll();
+
+      toast.success(`Category updated and ${updatedCount} transactions changed`);
       setEditId(null);
       setEditName('');
       setEditColor(DEFAULT_COLOR);
       setCategories(await getCategories());
     } catch (error) {
+      console.log(error);
       toast.error("Failed to update category");
     }
   };
