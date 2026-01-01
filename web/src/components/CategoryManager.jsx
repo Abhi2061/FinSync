@@ -3,19 +3,22 @@ import {
   getCategories,
   addCategory,
   updateCategory,
-  deleteCategory
+  deleteCategory,
+  createCategory
 } from '../utils/db';
 import { syncAll } from '../utils/cloudSync';
 import { ToastContainer, toast } from 'react-toastify';
 import { confirmAlert } from 'react-confirm-alert';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-confirm-alert/src/react-confirm-alert.css';
+import { useGroup } from '../contexts/GroupContext';
 
 import { useEffect, useState } from 'react';
 
 const DEFAULT_COLOR = "#0d6efd";
 
 function CategoryManager() {
+  const { currentGroup, currentUser } = useGroup();
   const [categories, setCategories] = useState([]);
   const [newCat, setNewCat] = useState('');
   const [newColor, setNewColor] = useState(DEFAULT_COLOR);
@@ -24,20 +27,28 @@ function CategoryManager() {
   const [editColor, setEditColor] = useState(DEFAULT_COLOR);
 
   useEffect(() => {
-    getCategories().then(setCategories);
-  }, []);
+    if (currentGroup) {
+      getCategories(currentGroup.id).then(setCategories);
+    }
+  }, [currentGroup]);
 
   const handleAdd = async () => {
+    if (!currentGroup) return;
     if (!newCat.trim()) {
       toast.warning("Category name required");
       return;
     }
     try {
-      await addCategory({ name: newCat.trim(), color: newColor });
+      await createCategory({
+        name: newCat.trim(),
+        color: newColor,
+        groupId: currentGroup.id,
+        createdBy: currentUser.uid,
+      });
       toast.success("Category added");
       setNewCat('');
       setNewColor(DEFAULT_COLOR);
-      setCategories(await getCategories());
+      setCategories(await getCategories(currentGroup.id));
     } catch (error) {
       toast.error("Failed to add category");
     }
@@ -52,37 +63,17 @@ function CategoryManager() {
       // 1. Sync latest data from cloud
       await syncAll();
 
-      // 2. Get old category name
-      const oldCat = categories.find(cat => cat.id === id);
-      const oldName = oldCat?.name;
-
-      // 3. Update category
+      // . Update category
       await updateCategory(id, { name: editName.trim(), color: editColor });
 
-      // 4. Update all transactions with old category name
-      const db = await initDB();
-      const tx = db.transaction('transactions', 'readwrite');
-      const store = tx.objectStore('transactions');
-      const allTxns = await store.getAll();
-      let updatedCount = 0;
-      for (const txn of allTxns) {
-        if (txn.category === oldName) {
-          txn.category = editName.trim();
-          txn.lastModified = new Date().toISOString();
-          await store.put(txn);
-          updatedCount++;
-        }
-      }
-      await tx.done;
-
-      // 5. Sync changes to cloud
+      // 3. Sync changes to cloud
       await syncAll();
 
-      toast.success(`Category updated and ${updatedCount} transactions changed`);
+      toast.success(`Category updated`);
       setEditId(null);
       setEditName('');
       setEditColor(DEFAULT_COLOR);
-      setCategories(await getCategories());
+      setCategories(await getCategories(currentGroup.id));
     } catch (error) {
       console.log(error);
       toast.error("Failed to update category");
@@ -100,7 +91,7 @@ function CategoryManager() {
             try {
               await deleteCategory(id);
               toast.success("Category deleted");
-              setCategories(await getCategories());
+              setCategories(await getCategories(currentGroup.id));
             } catch (error) {
               toast.error("Failed to delete category");
             }

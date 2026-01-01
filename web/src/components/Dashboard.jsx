@@ -13,10 +13,12 @@ import {
 } from 'date-fns';
 import { initDB, getCategories } from '../utils/db';
 import CategoryManager from './CategoryManager';
+import { useGroup } from '../contexts/GroupContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 function Dashboard() {
+  const { currentGroup } = useGroup();
   const [transactions, setTransactions] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedMonth, setSelectedMonth] = useState(new Date());
@@ -25,17 +27,23 @@ function Dashboard() {
 
   useEffect(() => {
     const fetchTransactions = async () => {
+      if (!currentGroup) {
+        setTransactions([]);
+        return;
+      }
       const db = await initDB();
-      const tx = db.transaction('transactions');
-      const all = await tx.store.getAll();
+      const index = db.transaction('transactions').store.index('groupId');
+      const all = await index.getAll(currentGroup.id);
       setTransactions(all);
     };
     fetchTransactions();
-  }, []);
+  }, [currentGroup]);
 
   useEffect(() => {
-    getCategories().then(setCategories);
-  }, []);
+    if (currentGroup) {
+      getCategories(currentGroup.id).then(setCategories);
+    }
+  }, [currentGroup]);
 
   const getFilteredTransactions = () => {
     return transactions.filter(txn => !txn.deleted).filter((txn) => {
@@ -47,24 +55,46 @@ function Dashboard() {
   };
 
   const generateChartData = (txns) => {
-    const categoryMap = {};
+    const categoryMap = {}; // ID -> Amount
     txns.forEach((txn) => {
-      categoryMap[txn.category] =
-        (categoryMap[txn.category] || 0) + txn.amount;
+      // Prioritize ID. If ID exists, use it. If not, use legacy name.
+      // If both missing, use 'Uncategorized'
+      const key = txn.categoryId || txn.category || 'Uncategorized';
+      categoryMap[key] = (categoryMap[key] || 0) + txn.amount;
     });
 
-    // Map category names to colors
-    const colorMap = {};
-    categories.forEach(cat => {
-      colorMap[cat.name] = cat.color || "#0d6efd";
+    const labels = [];
+    const dataPoints = [];
+    const bgColors = [];
+
+    Object.keys(categoryMap).forEach(key => {
+      const amount = categoryMap[key];
+      const catObj = categories.find(c => c.id === key);
+      let displayName = key;
+      let color = "#3b82f6";
+
+      if (catObj) {
+        displayName = catObj.name;
+        color = catObj.color || "#3b82f6";
+      } else {
+        const catByName = categories.find(c => c.name === key);
+        if (catByName) {
+          color = catByName.color || "#3b82f6";
+        }
+      }
+
+      labels.push(displayName);
+      dataPoints.push(amount);
+      bgColors.push(color);
     });
 
     return {
-      labels: Object.keys(categoryMap),
+      labels,
       datasets: [
         {
-          data: Object.values(categoryMap),
-          backgroundColor: Object.keys(categoryMap).map(catName => colorMap[catName] || "#0d6efd"),
+          data: dataPoints,
+          backgroundColor: bgColors,
+          borderWidth: 0,
         },
       ],
     };
@@ -72,16 +102,17 @@ function Dashboard() {
 
   const filteredTxns = getFilteredTransactions();
 
-  const chartData = generateChartData(
-    filteredTxns.filter(txn => txn.type === 'expense')
-  );
+  // Logic: Show only expenses for daily view. Show all for monthly.
+  const chartTxns = filteredTxns.filter(txn => txn.type && txn.type.toLowerCase() === 'expense')
+
+  const chartData = generateChartData(chartTxns);
 
   const totalExpense = filteredTxns
-    .filter(txn => txn.type === 'expense')
+    .filter(txn => txn.type && txn.type.toLowerCase() === 'expense')
     .reduce((sum, txn) => sum + txn.amount, 0);
 
   const totalIncome = filteredTxns
-    .filter(txn => txn.type === 'income')
+    .filter(txn => txn.type && txn.type.toLowerCase() === 'income')
     .reduce((sum, txn) => sum + txn.amount, 0);
 
   const balance = totalIncome - totalExpense;
@@ -103,120 +134,145 @@ function Dashboard() {
   };
 
   return (
-    <div className="container py-2">
-      {/* Toggle buttons */}
-      <div className="d-flex justify-content-center gap-2 mb-3">
-        <button
-          className={`btn btn-sm ${
-            view === 'daily' ? 'btn-primary' : 'btn-outline-primary'
-          }`}
-          onClick={() => setView('daily')}
-        >
-          📅 Daily
-        </button>
-        <button
-          className={`btn btn-sm ${
-            view === 'monthly' ? 'btn-primary' : 'btn-outline-primary'
-          }`}
-          onClick={() => setView('monthly')}
-        >
-          📊 Monthly
-        </button>
+    <div className="py-2">
+
+      {/* Controls: Toggle & Date */}
+      <div className="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4">
+        {/* Toggle */}
+        <div className="d-flex gap-2">
+          <button
+            className={`btn ${view === 'daily' ? 'btn-primary' : 'btn-outline-primary'} px-4 d-flex align-items-center gap-2`}
+            onClick={() => setView('daily')}
+          >
+            <span>📅</span> Daily
+          </button>
+          <button
+            className={`btn ${view === 'monthly' ? 'btn-primary' : 'btn-outline-primary'} px-4 d-flex align-items-center gap-2`}
+            onClick={() => setView('monthly')}
+          >
+            <span>📊</span> Monthly
+          </button>
+        </div>
+
+        {/* Date Nav */}
+        <div className="d-flex align-items-center gap-2 bg-white rounded-pill px-3 py-1 shadow-sm border">
+          <button className="btn btn-sm text-secondary" onClick={handlePrev}>❮</button>
+
+          <div className="text-center" style={{ minWidth: '140px' }}>
+            {view === 'daily' ? (
+              <DatePicker
+                selected={selectedDate}
+                onChange={setSelectedDate}
+                dateFormat="dd MMMM yyyy"
+                className="form-control-plaintext text-center fw-bold text-primary p-0 m-0 w-100 cursor-pointer"
+                onFocus={(e) => e.target.blur()}
+              />
+            ) : (
+              <DatePicker
+                selected={selectedMonth}
+                onChange={setSelectedMonth}
+                showMonthYearPicker
+                dateFormat="MMMM yyyy"
+                className="form-control-plaintext text-center fw-bold text-primary p-0 m-0 w-100 cursor-pointer"
+                onFocus={(e) => e.target.blur()}
+              />
+            )}
+          </div>
+
+          <button className="btn btn-sm text-secondary" onClick={handleNext}>❯</button>
+        </div>
       </div>
 
-      {/* Date/month selector + nav */}
-      <div className="d-flex flex-column align-items-center justify-content-center gap-2 mb-3 text-center">
-        
-        <div>
+      {/* Main Content */}
+      <div className="row g-3 mb-4">
+        {/* Stats Column */}
+        <div className="col-12 col-md-5 d-flex flex-column gap-3">
+
           {view === 'daily' ? (
-            <DatePicker
-              selected={selectedDate}
-              onChange={setSelectedDate}
-              dateFormat="dd-MMMM-yyyy"
-              className="form-control form-control-sm text-center"
-            />
+            /* Daily View: Show Only Expense */
+            <div className="card shadow-sm h-100">
+              <div className="card-body text-center d-flex flex-column align-items-center justify-content-center py-4">
+                <div className="text-muted small fw-bold text-uppercase mb-2">Total Expense</div>
+                <div className="display-6 fw-bold text-danger">₹{totalExpense.toLocaleString('en-IN')}</div>
+              </div>
+            </div>
           ) : (
-            <DatePicker
-              selected={selectedMonth}
-              onChange={setSelectedMonth}
-              showMonthYearPicker
-              dateFormat="MMMM-yyyy"
-              className="form-control form-control-sm text-center"
-            />
+            /* Monthly View: Show Balance, Income, Expense */
+            <>
+              {/* Balance Card */}
+              <div className="card shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="stat-card-title">Net Balance</div>
+                  <div className={`stat-card-value ${balance >= 0 ? 'text-primary' : 'text-danger'}`}>
+                    ₹{balance.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Income/Expense Cards */}
+              <div className="row g-2">
+                <div className="col-6">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body text-center py-3 px-1">
+                      <div className="stat-card-title text-success">Income</div>
+                      <div className="h5 fw-bold mb-0 text-success">₹{totalIncome.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body text-center py-3 px-1">
+                      <div className="stat-card-title text-danger">Expense</div>
+                      <div className="h5 fw-bold mb-0 text-danger">₹{totalExpense.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
+
         </div>
 
-        <div className="d-flex gap-3 justify-content-center">
-          <button className="btn btn-outline-secondary btn-sm" onClick={handlePrev}>
-            ⬅️ Prev
-          </button>
-          <button className="btn btn-outline-secondary btn-sm" onClick={handleNext}>
-            Next ➡️
-          </button>
-        </div>
-      </div>
-
-        {/* Chart or no data */}
-      {filteredTxns.length === 0 ? (
-        <div className="text-center text-muted mt-4">No data found</div>
-      ) : (
-        <div className="mb-4" style={{ maxWidth: 400, margin: '0 auto' }}>
-          <div className="card text-center p-2 bg-light border-0 shadow-sm mb-3">
-              {/* Summary Info */}
-            <div className="text-center mb-3">
-              {view === 'daily' ? (
-                <h6 className="fw-semibold text-danger">
-                  Total Expense: ₹{totalExpense.toLocaleString('en-IN')}
-                </h6>
+        {/* Chart Column */}
+        <div className="col-12 col-md-7">
+          <div className="card shadow-sm h-100">
+            <div className="card-body d-flex flex-column align-items-center justify-content-center">
+              {chartTxns.length === 0 ? (
+                <div className="text-center py-5">
+                  <div className="text-muted mb-2" style={{ fontSize: '2rem' }}>📭</div>
+                  <p className="text-muted fw-medium">No transactions found</p>
+                </div>
               ) : (
-                <div className="d-flex flex-column align-items-center gap-1">
-                  <h6 className="fw-semibold text-success">
-                    Income: ₹{totalIncome.toLocaleString('en-IN')}
-                  </h6>
-                  <h6 className="fw-semibold text-danger">
-                    Expense: ₹{totalExpense.toLocaleString('en-IN')}
-                  </h6>
-                  <h6 className={`fw-semibold ${balance >= 0 ? 'text-primary' : 'text-danger'}`}>
-                    Balance: ₹{balance.toLocaleString('en-IN')}
-                  </h6>
+                <div className="w-100" style={{ maxWidth: 320 }}>
+                  <Doughnut
+                    data={chartData}
+                    options={{
+                      cutout: '65%',
+                      plugins: {
+                        legend: {
+                          display: true,
+                          position: 'bottom',
+                          labels: {
+                            usePointStyle: true,
+                            padding: 20,
+                            font: { family: "'Inter', sans-serif", size: 11 }
+                          }
+                        }
+                      }
+                    }}
+                  />
+                  {/* Optional: Add clear indicator of what's being shown */}
+                  <div className="text-center mt-3 small text-muted">
+                    {view === 'daily' ? 'Expenses Breakdown' : 'All Transactions Breakdown'}
+                  </div>
                 </div>
               )}
             </div>
           </div>
-
-          <Doughnut
-            data={chartData}
-            options={{
-              plugins: {
-                legend: {
-                  display: true,
-                  position: 'bottom', // ✅ show below the chart
-                  labels: {
-                    generateLabels: (chart) => {
-                      const data = chart.data;
-                      const dataset = data.datasets[0];
-
-                      return data.labels.map((label, index) => {
-                        const value = dataset.data[index];
-                        const backgroundColor = dataset.backgroundColor[index];
-
-                        return {
-                          text: `${label}: ₹${value}`,
-                          fillStyle: backgroundColor,
-                          strokeStyle: backgroundColor,
-                          index,
-                        };
-                      });
-                    }
-                  }
-                }
-              }
-            }}
-          />
         </div>
-      )}
+      </div>
 
-      <div className="container py-2 ">
+      <div className="mt-5">
         <CategoryManager />
       </div>
     </div>

@@ -10,25 +10,38 @@ import 'react-toastify/dist/ReactToastify.css';
 import { confirmAlert } from 'react-confirm-alert';
 import 'react-confirm-alert/src/react-confirm-alert.css';
 import { saveAs } from 'file-saver';
+import { useGroup } from '../contexts/GroupContext';
+import Modal from 'react-modal';
+
+Modal.setAppElement('#root');
 
 function TransactionList() {
+  const { currentGroup } = useGroup();
   const [transactions, setTransactions] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
-  const [editId, setEditId] = useState(null);
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
   const [categories, setCategories] = useState([]);
   const [user, setUser] = useState(null);
+
+  // Editing state
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     id: '',
     name: '',
     type: 'expense',
-    category: '',
+    categoryId: '',
+    category: '', // legacy
     date: '',
     amount: 0,
   });
+
+  // Filter state
   const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
 
@@ -40,19 +53,22 @@ function TransactionList() {
     return () => unsubscribe();
   }, []);
 
-  const handleUpdate = async () => {
+  const handleUpdate = async (e) => {
+    e.preventDefault();
     try {
       const db = await initDB();
       const tx = db.transaction('transactions', 'readwrite');
+      const { category, ...cleanForm } = editForm; // Exclude legacy name string
       await tx.store.put({
-        ...editForm,
+        ...cleanForm,
+        amount: parseFloat(editForm.amount),
         lastModified: new Date().toISOString(),
+        groupId: currentGroup?.id,
       });
       await tx.done;
 
-      setEditId(null);
+      setEditModalOpen(false);
       await fetchTransactions();
-
       toast.success("Transaction updated successfully");
     } catch (error) {
       console.error("Update failed:", error);
@@ -61,9 +77,16 @@ function TransactionList() {
   };
 
   const fetchTransactions = async () => {
+    if (!currentGroup) {
+      setTransactions([]);
+      setFiltered([]);
+      return;
+    }
     const db = await initDB();
-    const all = await db.getAll('transactions');
-    const active = all.filter(txn => !txn.deleted); // Exclude soft-deleted transactions
+    const index = db.transaction('transactions').store.index('groupId');
+    const all = await index.getAll(currentGroup.id);
+
+    const active = all.filter(txn => !txn.deleted);
     const sorted = active.sort((a, b) => new Date(b.date) - new Date(a.date));
     setTransactions(sorted);
     setFiltered(sorted);
@@ -72,7 +95,6 @@ function TransactionList() {
   const applyFilter = () => {
     let filteredTxns = transactions;
 
-    // Date filter
     if (startDate && endDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
@@ -84,23 +106,26 @@ function TransactionList() {
       });
     }
 
-    // Category filter
     if (selectedCategories.length > 0) {
-      filteredTxns = filteredTxns.filter(txn =>
-        selectedCategories.includes(txn.category)
-      );
+      filteredTxns = filteredTxns.filter(txn => {
+        const catObj = categories.find(c => c.id === txn.categoryId);
+        const catName = catObj ? catObj.name : txn.category;
+        return selectedCategories.includes(catName);
+      });
     }
 
     setFiltered(filteredTxns);
   };
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      const result = await getCategories(); // returns array from IndexedDB
-      setCategories(result);
-    };
-    fetchCategories();
-  }, []);
+    if (currentGroup) {
+      const fetchCategories = async () => {
+        const result = await getCategories(currentGroup.id);
+        setCategories(result);
+      };
+      fetchCategories();
+    }
+  }, [currentGroup]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -108,7 +133,7 @@ function TransactionList() {
 
   useEffect(() => {
     fetchTransactions();
-  }, []);
+  }, [currentGroup]);
 
   useEffect(() => {
     applyFilter();
@@ -117,26 +142,21 @@ function TransactionList() {
   useEffect(() => {
     applyFilter();
   }, [selectedCategories]);
-  
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
 
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = filtered.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
   const handleExportCSV = () => {
-    // Use your filtered list if available, or fallback to all
     const dataToExport = filtered;
-
     if (dataToExport.length === 0) {
       toast.info("No transactions to export");
       return;
     }
-
-    // Format data as CSV rows
     const rows = [
-      ['Name', 'Type', 'Category', 'Date', 'Amount'], // headers
+      ['Name', 'Type', 'Category', 'Date', 'Amount'],
       ...dataToExport.map(txn => [
         txn.name,
         txn.type,
@@ -145,305 +165,379 @@ function TransactionList() {
         txn.amount
       ])
     ];
-
     const csvContent = rows.map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], {
-      type: 'text/csv;charset=utf-8;',
-    });
-
-    const fileName = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
-    saveAs(blob, fileName);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    saveAs(blob, `transactions_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
-  useEffect(() => {
-    if (!categoryFilterOpen) return;
-    const handleClick = (e) => {
-      if (!e.target.closest('.category-filter-dropdown')) {
-        setCategoryFilterOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [categoryFilterOpen]);
+  const openEditModal = (txn) => {
+    setEditForm({
+      ...txn,
+      date: txn.date ? new Date(txn.date).toISOString().split('T')[0] : ''
+    });
+    setEditModalOpen(true);
+  };
+
+  // Helper to get category color
+  const getCatColor = (id, name) => {
+    const cat = categories.find(c => c.id === id);
+    if (cat && cat.color) return cat.color;
+    return '#64748b'; // slate-500 default
+  };
 
   return (
-    <div className="container mt-4">
-      <h2 className="mb-3 text-center">📋 Transactions</h2>
+    <div className="py-2">
       <ToastContainer position="bottom-right" autoClose={3000} />
 
-      {/* Date Range Filter */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-        {/* From date */}
-        <div className="d-flex align-items-center" style={{ flex: 1 }}>
-          <label className="me-2 fw-medium">From:</label>
-          <DatePicker
-            selected={startDate}
-            onChange={(date) => setStartDate(date)}
-            dateFormat="dd/MM/yyyy"
-            className="form-control form-control-sm"
-            placeholderText="Start Date"
-            style={{ width: '160px' }}
-          />
-        </div>
-
-        {/* To date */}
-        <div className="d-flex align-items-center justify-content-end" style={{ flex: 1 }}>
-          <label className="me-2 fw-medium">To:</label>
-          <DatePicker
-            selected={endDate}
-            onChange={(date) => setEndDate(date)}
-            dateFormat="dd/MM/yyyy"
-            className="form-control form-control-sm"
-            placeholderText="End Date"
-            style={{ width: '160px' }}
-          />
+      {/* Header Actions */}
+      <div className="d-flex align-items-center justify-content-between mb-3">
+        <h5 className="mb-0 fw-bold text-dark">History</h5>
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-white border shadow-sm btn-sm d-flex align-items-center gap-2"
+            onClick={handleExportCSV}
+            title="Export CSV"
+          >
+            <span>⬇️</span> <span className="d-none d-md-inline">Export</span>
+          </button>
+          <button
+            className="btn btn-white border shadow-sm btn-sm d-flex align-items-center gap-2"
+            onClick={async () => { await syncAll() }}
+            title="Sync with cloud"
+            disabled={!user}
+          >
+            <span>🔁</span> <span className="d-none d-md-inline">Sync</span>
+          </button>
         </div>
       </div>
-      <div className="d-flex align-items-center justify-content-between mb-3 gap-2" style={{ flex: 1 }}>
-        <label className="me-2 fw-medium">Category:</label>
-        <div style={{ position: 'relative', width: '100%' }}>
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            style={{ minWidth: 120 }}
-            onClick={() => setCategoryFilterOpen((open) => !open)}
-          >
-            {selectedCategories.length === 0 ? "All Categories" : `${selectedCategories.length} selected`}
-          </button>
-          {categoryFilterOpen && (
-            <div
-              className="category-filter-dropdown"
-              style={{
-                position: 'absolute',
-                top: '110%',
-                left: 0,
-                zIndex: 10,
-                background: '#fff',
-                border: '1px solid #ccc',
-                borderRadius: 6,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                padding: '8px',
-                minWidth: 180,
-                maxHeight: 220,
-                overflowY: 'auto'
-              }}
-            >
-              <div>
-                <label className="d-block mb-1">
-                  <input
-                    type="checkbox"
-                    checked={selectedCategories.length === 0}
-                    onChange={() => setSelectedCategories([])}
-                  />{" "}
-                  All Categories
-                </label>
-                <hr className="my-1" />
-                {categories.map((cat) => (
-                  <label key={cat.id} className="d-block mb-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedCategories.includes(cat.name)}
-                      onChange={() => {
-                        if (selectedCategories.includes(cat.name)) {
-                          // Remove category
-                          const updated = selectedCategories.filter(c => c !== cat.name);
-                          setSelectedCategories(updated);
-                        } else {
-                          // Add category
-                          setSelectedCategories([...selectedCategories, cat.name]);
-                        }
-                      }}
-                    />{" "}
-                    {cat.name}
-                  </label>
-                ))}
+
+      {/* Filter Toolbar */}
+      <div className="card shadow-sm border-0 mb-4 bg-white">
+        <div className="card-body p-3">
+          <div className="d-flex flex-column flex-md-row gap-3 align-items-md-center justify-content-between">
+
+            {/* Date Filters */}
+            <div className="d-flex gap-2">
+              <div className="d-flex align-items-center gap-2 bg-light rounded px-2 py-1 border">
+                <span className="text-secondary small">From</span>
+                <DatePicker
+                  selected={startDate}
+                  onChange={(date) => setStartDate(date)}
+                  dateFormat="dd/MM/yyyy"
+                  className="form-control-plaintext form-control-sm p-0 fw-bold text-dark"
+                  placeholderText="Start"
+                  style={{ width: '85px' }}
+                />
+              </div>
+              <div className="d-flex align-items-center gap-2 bg-light rounded px-2 py-1 border">
+                <span className="text-secondary small">To</span>
+                <DatePicker
+                  selected={endDate}
+                  onChange={(date) => setEndDate(date)}
+                  dateFormat="dd/MM/yyyy"
+                  className="form-control-plaintext form-control-sm p-0 fw-bold text-dark"
+                  placeholderText="End"
+                  style={{ width: '85px' }}
+                />
               </div>
             </div>
-          )}
-        </div>
-      </div>      
 
-      {/* Export & Sync Buttons */}
-      <div className="d-flex mb-2">
-        <button
-          className="btn btn-outline-success btn-sm"
-          onClick={handleExportCSV}
-        >
-          ⬇️ Export to CSV
-        </button>
-        <button
-          className="btn btn-outline-info btn-sm ms-auto"
-          onClick={async () => { await syncAll() }}
-          title="Sync with cloud"
-          disabled={!user}
-        >
-          🔁
-        </button>
+            {/* Category Filter */}
+            <div className="position-relative">
+              <button
+                className="btn btn-light border w-100 d-flex justify-content-between align-items-center"
+                style={{ minWidth: '200px' }}
+                onClick={() => setCategoryFilterOpen(!categoryFilterOpen)}
+              >
+                <span className="small text-secondary">{selectedCategories.length === 0 ? "All Categories" : `${selectedCategories.length} selected`}</span>
+                <small>▼</small>
+              </button>
+
+              {categoryFilterOpen && (
+                <div
+                  className="category-filter-dropdown shadow-lg rounded p-2"
+                  style={{
+                    position: 'absolute',
+                    top: '110%',
+                    right: 0,
+                    zIndex: 50,
+                    background: '#fff',
+                    width: '100%',
+                    minWidth: '220px',
+                    maxHeight: '250px',
+                    overflowY: 'auto',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <div className="form-check mb-2 pb-2 border-bottom">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={selectedCategories.length === 0}
+                      onChange={() => setSelectedCategories([])}
+                      id="cat-all"
+                    />
+                    <label className="form-check-label small fw-bold" htmlFor="cat-all">All Categories</label>
+                  </div>
+                  {categories.map((cat) => (
+                    <div key={cat.id} className="form-check mb-1">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        checked={selectedCategories.includes(cat.name)}
+                        onChange={() => {
+                          if (selectedCategories.includes(cat.name)) {
+                            setSelectedCategories(selectedCategories.filter(c => c !== cat.name));
+                          } else {
+                            setSelectedCategories([...selectedCategories, cat.name]);
+                          }
+                        }}
+                        id={`cat-${cat.id}`}
+                      />
+                      <label className="form-check-label small" htmlFor={`cat-${cat.id}`}>{cat.name}</label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
-        {/* Transaction List */}
-      {filtered.length === 0 ? (
-        <p className="text-muted">No transactions found for selected range.</p>
-      ) : (
-        <div>
-          <div className="table-responsive" style={{ overflowX: 'auto' }}>
-            <table className="table table-bordered table-hover">
-              <thead className="table-light">
-                <tr>
-                  <th style={{ minWidth: '100px' }}>Name</th>
-                  <th style={{ minWidth: '80px' }}>Type</th>
-                  <th style={{ minWidth: '100px' }}>Category</th>
-                  <th style={{ minWidth: '90px' }}>Date</th>
-                  <th className="text-end" style={{ minWidth: '100px' }}>Amount (₹)</th>
-                  <th style={{ minWidth: '100px' }}>Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {paginated.map((txn) => (
-                  <tr key={txn.id}>
-                    {editId === txn.id ? (
-                      <>
-                        <td>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            value={editForm.name}
-                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          />
+      {/* Transaction List */}
+      <div className="card shadow-sm border-0">
+        {filtered.length === 0 ? (
+          <div className="p-5 text-center text-muted">
+            <p className="mb-0">No transactions found matching your filters.</p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="table-responsive d-none d-md-block">
+              <table className="table align-middle mb-0 table-hover">
+                <thead className="bg-light">
+                  <tr>
+                    <th className="ps-4 text-secondary text-uppercase small" style={{ letterSpacing: '0.05em' }}>Description</th>
+                    <th className="text-secondary text-uppercase small" style={{ letterSpacing: '0.05em' }}>Category</th>
+                    <th className="text-secondary text-uppercase small" style={{ letterSpacing: '0.05em' }}>Date</th>
+                    <th className="text-end pe-4 text-secondary text-uppercase small" style={{ letterSpacing: '0.05em' }}>Amount</th>
+                    <th className="text-end pe-4" style={{ width: 100 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.map((txn) => {
+                    const catObj = categories.find(c => c.id === txn.categoryId);
+                    const catName = catObj ? catObj.name : txn.category;
+                    const catColor = catObj ? catObj.color : '#ccc';
+                    return (
+                      <tr key={txn.id}>
+                        <td className="ps-4">
+                          <div className="fw-bold text-dark">{txn.name}</div>
+                          <span className={`badge ${txn.type === 'income' ? 'bg-success bg-opacity-10 text-success' : 'bg-danger bg-opacity-10 text-danger'} rounded-pill small fw-normal`}>
+                            {txn.type.toUpperCase()}
+                          </span>
                         </td>
                         <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={editForm.type}
-                            onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
-                          >
-                            <option value="income">Income</option>
-                            <option value="expense">Expense</option>
-                          </select>
+                          <span className="badge rounded-pill fw-normal text-dark border" style={{ backgroundColor: `${catColor}20`, borderColor: catColor }}>
+                            {catName}
+                          </span>
                         </td>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={editForm.category}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, category: e.target.value })
-                            }
-                          >
-                            <option value="">Select category</option>
-                            {categories.map((cat, idx) => (
-                              <option key={idx} value={cat.name}>{cat.name}</option>
-                            ))}
-                          </select>
+                        <td className="text-secondary small">
+                          {new Date(txn.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
-                        <td>
-                          <input
-                            type="date"
-                            className="form-control form-control-sm"
-                            value={editForm.date}
-                            onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
-                          />
+                        <td className={`text-end pe-4 fw-bold ${txn.type === 'income' ? 'text-success' : 'text-danger'}`}>
+                          {txn.type === 'income' ? '+' : '-'} ₹{txn.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td>
-                          <input
-                            type="number"
-                            className="form-control form-control-sm"
-                            value={editForm.amount}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })
-                            }
-                          />
-                        </td>
-                        <td>
-                          <button
-                            className="btn btn-sm btn-success me-1"
-                            onClick={handleUpdate}
-                          >
-                            ✅
-                          </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => setEditId(null)}
-                          >
-                            ❌
-                          </button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td>{txn.name}</td>
-                        <td>{txn.type}</td>
-                        <td>{txn.category}</td>
-                        <td>{new Date(txn.date).toLocaleDateString('en-IN')}</td>
-                        <td className="text-end">{txn.amount.toFixed(2)}</td>
-                        <td className="text-nowrap">
-                          <div className="d-flex gap-1">
+                        <td className="text-end pe-4">
+                          <div className="d-flex gap-2 justify-content-end opacity-50 hover-opacity-100">
+                            <button className="btn btn-sm btn-light text-primary" onClick={() => openEditModal(txn)}>✏️</button>
                             <button
-                              className="btn btn-sm btn-outline-danger"
+                              className="btn btn-sm btn-light text-danger"
                               onClick={() => {
                                 confirmAlert({
-                                  title: 'Confirm Deletion',
-                                  message: 'Are you sure you want to delete this transaction?',
+                                  title: 'Delete Transaction?',
+                                  message: 'This cannot be undone.',
                                   buttons: [
                                     {
-                                      label: 'Yes',
+                                      label: 'Delete',
                                       onClick: async () => {
                                         await deleteTransaction(txn.id);
                                         await fetchTransactions();
-                                        toast.success("Transaction deleted successfully");
+                                        toast.success("Deleted");
                                       }
                                     },
-                                    {
-                                      label: 'No',
-                                      onClick: () => toast.info("Deletion cancelled")
-                                    }
+                                    { label: 'Cancel' }
                                   ]
                                 });
                               }}
                             >
                               🗑️
                             </button>
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => {
-                                setEditId(txn.id);
-                                setEditForm({ ...txn });
-                              }}
-                            >
-                              ✏️
-                            </button>
                           </div>
                         </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-              </tbody>
-            </table>  
+            {/* Mobile Card List View */}
+            <div className="d-md-none">
+              {paginated.map((txn) => {
+                const catObj = categories.find(c => c.id === txn.categoryId);
+                const catName = catObj ? catObj.name : txn.category;
+                const catColor = catObj ? catObj.color : '#ccc';
+                return (
+                  <div key={txn.id} className="p-3 border-bottom d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center gap-3">
+                      <div
+                        className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                        style={{ width: 40, height: 40, backgroundColor: `${catColor}20`, color: catColor }}
+                      >
+                        <span className="fw-bold" style={{ fontSize: '0.8rem' }}>{catName[0]}</span>
+                      </div>
+                      <div>
+                        <div className="fw-bold text-dark">{txn.name}</div>
+                        <div className="d-flex align-items-center gap-2 small text-muted">
+                          <span>{new Date(txn.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                          <span>•</span>
+                          <span className={txn.type === 'income' ? 'text-success' : 'text-danger'}>{txn.type}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-end">
+                      <div className={`fw-bold ${txn.type === 'income' ? 'text-success' : 'text-danger'}`}>
+                        {txn.type === 'income' ? '+' : '-'} ₹{txn.amount.toLocaleString('en-IN')}
+                      </div>
+                      <div className="mt-1 d-flex gap-3 justify-content-end">
+                        <button className="btn btn-xs btn-link p-0 text-muted text-decoration-none" onClick={() => openEditModal(txn)}>✏️ Edit</button>
+                        <button
+                          className="btn btn-xs btn-link p-0 text-danger text-decoration-none"
+                          onClick={() => {
+                            confirmAlert({
+                              title: 'Delete Transaction?',
+                              message: 'This cannot be undone.',
+                              buttons: [
+                                {
+                                  label: 'Delete',
+                                  onClick: async () => {
+                                    await deleteTransaction(txn.id);
+                                    await fetchTransactions();
+                                    toast.success("Deleted");
+                                  }
+                                },
+                                { label: 'Cancel' }
+                              ]
+                            });
+                          }}
+                        >
+                          🗑️ Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="card-footer bg-transparent border-top p-3 d-flex justify-content-between align-items-center">
+                <button
+                  className="btn btn-sm btn-white border"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => p - 1)}
+                >
+                  Previous
+                </button>
+                <span className="small text-muted">Page {currentPage} of {totalPages}</span>
+                <button
+                  className="btn btn-sm btn-white border"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Edit Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onRequestClose={() => setEditModalOpen(false)}
+        contentLabel="Edit Transaction"
+        style={{
+          overlay: { backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1050 },
+          content: {
+            maxWidth: 500,
+            margin: 'auto',
+            padding: '2rem',
+            borderRadius: '16px',
+            border: 'none',
+            background: '#fff',
+            inset: '50% auto auto 50%',
+            transform: 'translate(-50%, -50%)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+          }
+        }}
+      >
+        <h5 className="fw-bold mb-4">Edit Transaction</h5>
+        <form onSubmit={handleUpdate}>
+          <div className="mb-3">
+            <label className="form-label small fw-bold text-secondary">Description</label>
+            <input
+              type="text"
+              className="form-control"
+              value={editForm.name}
+              onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+            />
           </div>
-          <div className="d-flex justify-content-between align-items-center mt-3">
-            <button
-              className="btn btn-outline-primary"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((prev) => prev - 1)}
-            >
-              ← Previous
-            </button>
-
-            <span>Page {currentPage} of {totalPages}</span>
-
-            <button
-              className="btn btn-outline-primary"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((prev) => prev + 1)}
-            >
-              Next →
-            </button>
+          <div class="row g-3 mb-3">
+            <div className="col-6">
+              <label className="form-label small fw-bold text-secondary">Amount</label>
+              <input
+                type="number"
+                className="form-control"
+                value={editForm.amount}
+                onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
+              />
+            </div>
+            <div className="col-6">
+              <label className="form-label small fw-bold text-secondary">Date</label>
+              <input
+                type="date"
+                className="form-control"
+                value={editForm.date}
+                onChange={e => setEditForm({ ...editForm, date: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
-      )}
+          <div className="mb-4">
+            <label className="form-label small fw-bold text-secondary">Category</label>
+            <select
+              className="form-select"
+              value={editForm.categoryId}
+              onChange={e => {
+                const cat = categories.find(c => c.id === e.target.value);
+                if (cat) setEditForm({ ...editForm, categoryId: cat.id, category: cat.name });
+              }}
+            >
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="d-flex gap-2 justify-content-end">
+            <button type="button" className="btn btn-link text-secondary text-decoration-none" onClick={() => setEditModalOpen(false)}>Cancel</button>
+            <button type="submit" className="btn btn-primary px-4">Save Changes</button>
+          </div>
+        </form>
+      </Modal>
+
     </div>
   );
 }

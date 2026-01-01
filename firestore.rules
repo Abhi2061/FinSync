@@ -1,0 +1,71 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is a member of the group
+    function isGroupMember(groupId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/groups/$(groupId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+
+    // Helper function to check if user is the admin of the group
+    function isGroupAdmin(groupId) {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/groups/$(groupId)) &&
+        get(/databases/$(database)/documents/groups/$(groupId)).data.admin == request.auth.uid;
+    }
+
+    // Users collection (Personal data)
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      
+      match /transactions/{transactionId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+      match /categories/{categoryId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    // Groups collection
+    // Explicit Collection Group Rule for Invites
+    // This strictly allows a user to query "all invites where userId == TheirID" across the entire DB.
+    match /{path=**}/invites/{inviteId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Groups collection
+    match /groups/{groupId} {
+      // Allow creation if authenticated
+      allow create: if isAuthenticated();
+      
+      // Allow read/list if user is in 'members' array (using resource.data for list queries)
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.members;
+      
+      // Allow update/delete if admin
+      allow update, delete: if isGroupAdmin(groupId);
+
+      // Subcollections
+      match /transactions/{transactionId} {
+        allow read, write: if isGroupMember(groupId);
+      }
+      
+      match /categories/{categoryId} {
+        allow read, write: if isGroupMember(groupId);
+      }
+      
+      match /logs/{logId} {
+      	allow read: if isGroupMember(groupId);
+      }
+
+
+    }
+  }
+}
