@@ -10,6 +10,7 @@ const GroupManager = () => {
     } = useGroup();
 
     const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupType, setNewGroupType] = useState('shared');
     const [inviteEmail, setInviteEmail] = useState('');
     const [activeTab, setActiveTab] = useState('groups'); // groups, members, invites
 
@@ -26,8 +27,9 @@ const GroupManager = () => {
     const handleCreateGroup = async (e) => {
         e.preventDefault();
         if (newGroupName.trim()) {
-            await createGroup(newGroupName);
+            await createGroup(newGroupName, newGroupType);
             setNewGroupName('');
+            setNewGroupType('shared');
             setActiveTab('groups'); // Stay on groups to see new one
         }
     };
@@ -93,11 +95,11 @@ const GroupManager = () => {
                                                     onClick={() => switchGroup(group.id)}
                                                 >
                                                     <div className={`rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 text-white shadow-sm ${group.type === 'personal' ? 'bg-secondary' : 'bg-primary'}`} style={{ width: 40, height: 40, fontSize: '1.2rem' }}>
-                                                        {group.type === 'personal' ? '👤' : '👥'}
+                                                        {group.type === 'personal' ? '👤' : (group.type === 'trip' ? '✈️' : '👥')}
                                                     </div>
                                                     <div className="flex-grow-1">
                                                         <div className={`fw-bold ${currentGroup?.id === group.id ? 'text-primary' : 'text-dark'}`}>{group.name}</div>
-                                                        <div className="small text-muted">{group.type === 'personal' ? 'Private Ledger' : `${group.members?.length || 1} members`}</div>
+                                                        <div className="small text-muted">{group.type === 'personal' ? 'Private Ledger' : (group.type === 'trip' ? `Trip • ${group.members?.length || 1} members` : `Shared • ${group.members?.length || 1} members`)}</div>
                                                     </div>
                                                     {currentGroup?.id === group.id && (
                                                         <span className="badge bg-primary rounded-pill">Active</span>
@@ -130,6 +132,24 @@ const GroupManager = () => {
                                                     onChange={e => setNewGroupName(e.target.value)}
                                                 />
                                             </div>
+                                            <div className="mb-3 d-flex gap-2">
+                                                <div 
+                                                  className={`flex-fill border rounded p-2 text-center ${newGroupType === 'shared' ? 'border-primary bg-primary bg-opacity-10 text-primary fw-bold' : 'text-muted border-light bg-white'}`}
+                                                  onClick={() => setNewGroupType('shared')}
+                                                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                                                >
+                                                  <div style={{ fontSize: '1.2rem' }}>👥</div>
+                                                  <div className="small mt-1">Shared</div>
+                                                </div>
+                                                <div 
+                                                  className={`flex-fill border rounded p-2 text-center ${newGroupType === 'trip' ? 'border-primary bg-primary bg-opacity-10 text-primary fw-bold' : 'text-muted border-light bg-white'}`}
+                                                  onClick={() => setNewGroupType('trip')}
+                                                  style={{ cursor: 'pointer', transition: 'all 0.2s' }}
+                                                >
+                                                  <div style={{ fontSize: '1.2rem' }}>✈️</div>
+                                                  <div className="small mt-1">Trip</div>
+                                                </div>
+                                            </div>
                                             <button type="submit" className="btn btn-dark w-100 shadow-sm" disabled={!newGroupName.trim()}>
                                                 Create Group
                                             </button>
@@ -149,7 +169,7 @@ const GroupManager = () => {
                                     <small className="text-muted">{currentGroup.type === 'personal' ? 'Personal Profile' : 'Group Members'}</small>
                                 </div>
                                 <span className={`badge border ${currentGroup.type === 'personal' ? 'bg-light text-dark' : 'bg-success bg-opacity-10 text-success'}`}>
-                                    {currentGroup.type === 'personal' ? 'Private' : 'Shared'}
+                                    {currentGroup.type === 'personal' ? 'Private' : (currentGroup.type === 'trip' ? 'Trip' : 'Shared')}
                                 </span>
                             </div>
 

@@ -217,6 +217,7 @@ function TransactionList() {
           <div className="d-flex flex-column flex-md-row gap-3 align-items-md-center justify-content-between">
 
             {/* Date Filters */}
+            {currentGroup?.type !== 'trip' && (
             <div className="d-flex gap-2">
               <div className="d-flex align-items-center gap-2 bg-light rounded px-2 py-1 border">
                 <span className="text-secondary small">From</span>
@@ -241,6 +242,7 @@ function TransactionList() {
                 />
               </div>
             </div>
+            )}
 
             {/* Category Filter */}
             <div className="position-relative">

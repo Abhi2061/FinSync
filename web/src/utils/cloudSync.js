@@ -12,7 +12,9 @@ const withDefaults = (item, groupId) => ({
   groupId: groupId // Ensure groupId is attached
 });
 
-// Helper: Get all groups user is part of
+// Return a list of group objects that include the current user as a member.
+// Each returned object contains the Firestore document ID in `id` along with
+// the rest of the stored group data.
 export const getUserGroups = async () => {
   const user = auth.currentUser;
   if (!user) return [];
@@ -27,17 +29,22 @@ export const getUserGroups = async () => {
   }));
 };
 
-// 🔁 Pull from Firestore for a specific Group
+// === Pull remote data for one group into the local IndexedDB ===
+// This routine fetches all transactions and categories for `groupId`
+// from Firestore and merges them with whatever is stored locally, using
+// `lastModified` timestamps to decide which version wins.
 const syncGroupFromFirestore = async (groupId) => {
   const localDB = await initDB();
 
-  // 1. Transactions
+  // 1. Sync transactions collection
+  // fetch every remote transaction belonging to this group
   const txnRef = collection(db, 'groups', groupId, 'transactions');
   const txnSnap = await getDocs(txnRef);
   const txnTx = localDB.transaction('transactions', 'readwrite');
   const txnStore = txnTx.store;
 
-  // Get local txns for this group only
+  // Query the local IndexedDB store for transactions whose
+  // `groupId` matches; we will compare these against the cloud set.
   const groupIdIndex = txnStore.index('groupId');
   const localTxns = await groupIdIndex.getAll(groupId);
   const localMap = new Map(localTxns.map(txn => [String(txn.id), txn]));
@@ -51,9 +58,12 @@ const syncGroupFromFirestore = async (groupId) => {
     const cloudTime = new Date(cloudTxn.lastModified);
 
     if (!localTxn || cloudTime > localTime) {
-      // Fix for ID type mismatch (Int vs String):
-      // If we found a local match (by value) but the keys are different (types),
-      // we must delete the old local key (Int) before inserting the new cloud key (String).
+      // Handle ID type mismatch (number vs string):
+      // Older local records might have numeric IDs while Firestore always
+      // uses strings. When a record appears identical apart from the key type,
+      // delete the old one before inserting the cloud version so we don't end
+      // up with duplicates.
+
       if (localTxn && localTxn.id !== cloudTxn.id) {
         await txnStore.delete(localTxn.id);
       }
@@ -62,7 +72,7 @@ const syncGroupFromFirestore = async (groupId) => {
   }
   await txnTx.done; // Commit transactions
 
-  // 2. Categories
+  // 2. Sync categories collection (the same merging logic as above)
   const catRef = collection(db, 'groups', groupId, 'categories');
   const catSnap = await getDocs(catRef);
   const catTx = localDB.transaction('categories', 'readwrite');
@@ -74,11 +84,12 @@ const syncGroupFromFirestore = async (groupId) => {
   const localCatMap = new Map(localCats.map(c => [String(c.id), c])); // Normalize ID to string for lookup
 
   for (const docSnap of catSnap.docs) {
-    // Firestore IDs are strings, Local IDs might be numbers if auto-increment?
-    // In existing code, cat id was 'parseInt(doc.id)'.
-    // If we switch to UUIDs for categories (better for sync), we should use string IDs.
-    // For compatibility with old code, let's try to keep ID consistent.
-    // If we generate IDs with UUID, they are strings.
+    // Notes on ID formats:
+    // - Firestore generates string IDs for every document.
+    // - The local IndexedDB used to auto‑increment numeric IDs.
+    // To keep syncing reliably we treat both forms as strings and,
+    // if necessary, delete the numeric entry when replacing it.
+
     const cloudCat = withDefaults({ ...docSnap.data(), id: docSnap.id }, groupId);
 
     const localCat = localCatMap.get(cloudCat.id);
@@ -96,20 +107,25 @@ const syncGroupFromFirestore = async (groupId) => {
   await catTx.done;
 };
 
-// 🔁 Push to Firestore for a specific Group
-// We can actually just push ALL local data to their respective groups.
+// === Push local changes upward to Firestore ===
+// Walk every transaction and category stored locally and upload
+// modifications to the corresponding group's subcollection.  Running
+// this before the pull step ensures the remote side sees the latest edits.
 export const syncToFirestore = async () => {
   const user = auth.currentUser;
   if (!user) return;
 
   const localDB = await initDB();
 
-  // TRANSACTIONS
+  // --- handle transactions first ---
+  // load every transaction from the local database so they can be grouped
   const tx = localDB.transaction('transactions', 'readonly');
   const localTransactions = await tx.store.getAll();
 
-  // We need to fetch cloud state for comparison to avoid overwriting newer changes?
-  // Optimization: Group local txns by groupId.
+  // Rather than blindly overwriting remote documents, we compare
+  // timestamps.  To minimize repeated reads we first bucket the local
+  // list by `groupId` so we can fetch each cloud collection only once.
+
   const txnsByGroup = localTransactions.reduce((acc, txn) => {
     if (txn.groupId) {
       acc[txn.groupId] = acc[txn.groupId] || [];
@@ -121,9 +137,10 @@ export const syncToFirestore = async () => {
   for (const [groupId, txns] of Object.entries(txnsByGroup)) {
     if (!groupId || groupId === 'undefined') continue; // Skip invalid groups
     const cloudRef = collection(db, 'groups', groupId, 'transactions');
-    // This is expensive (N reads). Better to modify 'lastModified' check logic or Assume we only push if we edited?
-    // CloudSync usually relies on "If I have changes".
-    // Let's do the "Get All Cloud" approach per group for safety, like before.
+    // Fetching every document in the cloud collection costs one read per
+    // item, but it allows accurate timestamp comparison.  A future
+    // optimization might track dirty flags instead of pulling the whole set.
+
     const cloudSnap = await getDocs(cloudRef);
     const cloudMap = new Map(cloudSnap.docs.map(d => [d.id, d.data()]));
 
@@ -141,7 +158,8 @@ export const syncToFirestore = async () => {
     }
   }
 
-  // CATEGORIES
+  // --- then handle categories ---
+  // same pattern as transactions: read local records first
   const catTx = localDB.transaction('categories', 'readonly');
   const localCategories = await catTx.store.getAll();
 
@@ -174,17 +192,20 @@ export const syncToFirestore = async () => {
   }
 };
 
-// 🔁 Main Sync Function
+// === Top-level sync orchestration ===
+// Calls push then pull so the user's edits propagate before we
+// refresh with any group changes from the server.
 export const syncAll = async () => {
   try {
     toast.info('🔄 Syncing...');
     const user = auth.currentUser;
     if (!user) return;
 
-    // 1. Push Local Changes to their groups
+    // 1. Send any pending local changes up to Firestore
     await syncToFirestore();
 
-    // 2. Pull Remote Changes from MY groups
+    // 2. Fetch the list of groups the user belongs to and
+    //    pull down any updates for each one
     const myGroups = await getUserGroups();
 
     for (const group of myGroups) {

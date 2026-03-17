@@ -26,7 +26,7 @@ function Navbar({ activeView, setActiveView }) {
                     {currentGroup && (
                         <div className="d-none d-md-flex align-items-center gap-2 px-3 py-1 rounded-pill bg-white-10 text-white border border-white-20">
                             <span className="small text-white-50 uppercase tracking-wider" style={{ fontSize: '0.7rem' }}>ACTIVE</span>
-                            <span className="fw-medium">{currentGroup.type === 'personal' ? 'so Personal Ledger' : currentGroup.name}</span>
+                            <span className="fw-medium">{currentGroup.type === 'personal' ? 'Personal Ledger' : currentGroup.name}</span>
                         </div>
                     )}
 

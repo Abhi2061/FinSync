@@ -47,6 +47,9 @@ function Dashboard() {
 
   const getFilteredTransactions = () => {
     return transactions.filter(txn => !txn.deleted).filter((txn) => {
+      // Trip workspaces aggregate all transactions, no date filtering
+      if (currentGroup?.type === 'trip') return true;
+
       const txnDate = new Date(txn.date);
       return view === 'daily'
         ? isSameDay(txnDate, selectedDate)
@@ -137,6 +140,7 @@ function Dashboard() {
     <div className="py-2">
 
       {/* Controls: Toggle & Date */}
+      {currentGroup?.type !== 'trip' && (
       <div className="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mb-4">
         {/* Toggle */}
         <div className="d-flex gap-2">
@@ -182,13 +186,44 @@ function Dashboard() {
           <button className="btn btn-sm text-secondary" onClick={handleNext}>❯</button>
         </div>
       </div>
+      )}
 
       {/* Main Content */}
       <div className="row g-3 mb-4">
         {/* Stats Column */}
         <div className="col-12 col-md-5 d-flex flex-column gap-3">
 
-          {view === 'daily' ? (
+          {currentGroup?.type === 'trip' ? (
+            <>
+              {/* Special Trip Header Cards */}
+              <div className="card shadow-sm h-100">
+                <div className="card-body text-center">
+                  <div className="stat-card-title">Remaining Balance</div>
+                  <div className={`stat-card-value ${balance >= 0 ? 'text-primary' : 'text-danger'}`}>
+                    ₹{balance.toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+              <div className="row g-2">
+                <div className="col-6">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body text-center py-3 px-1">
+                      <div className="stat-card-title text-success">Total Contributed</div>
+                      <div className="h5 fw-bold mb-0 text-success">₹{totalIncome.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-body text-center py-3 px-1">
+                      <div className="stat-card-title text-danger">Total Spent</div>
+                      <div className="h5 fw-bold mb-0 text-danger">₹{totalExpense.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : view === 'daily' ? (
             /* Daily View: Show Only Expense */
             <div className="card shadow-sm h-100">
               <div className="card-body text-center d-flex flex-column align-items-center justify-content-center py-4">
@@ -263,7 +298,7 @@ function Dashboard() {
                   />
                   {/* Optional: Add clear indicator of what's being shown */}
                   <div className="text-center mt-3 small text-muted">
-                    {view === 'daily' ? 'Expenses Breakdown' : 'All Transactions Breakdown'}
+                    {currentGroup?.type === 'trip' ? 'Expense Distribution' : (view === 'daily' ? 'Expenses Breakdown' : 'All Transactions Breakdown')}
                   </div>
                 </div>
               )}
@@ -271,6 +306,31 @@ function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Contributions by Person - for Shared and Trip */}
+      {(currentGroup?.type === 'shared' || currentGroup?.type === 'trip') && (
+        <div className="card shadow-sm border-0 mb-4">
+          <div className="card-header bg-white border-bottom py-3">
+            <h6 className="mb-0 fw-bold">Contributions by Person</h6>
+          </div>
+          <div className="card-body p-0">
+            <div className="list-group list-group-flush">
+              {currentGroup.members?.map(uid => {
+                const amount = filteredTxns
+                  .filter(txn => txn.type === 'income' && txn.createdBy === uid)
+                  .reduce((sum, txn) => sum + txn.amount, 0);
+                const name = currentGroup.memberDetails?.[uid]?.displayName || 'Unknown';
+                return (
+                  <div key={uid} className="list-group-item p-3 d-flex justify-content-between align-items-center">
+                    <div className="fw-medium text-dark">{name}</div>
+                    <div className="fw-bold text-success">₹{amount.toLocaleString('en-IN')}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-5">
         <CategoryManager />
