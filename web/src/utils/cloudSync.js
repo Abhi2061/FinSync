@@ -1,9 +1,19 @@
 import { db, auth } from '../firebase';
 import { collection, getDocs, setDoc, doc, deleteDoc, query, where, Timestamp } from 'firebase/firestore';
-import { initDB } from './db';
+import { initDB, getMetaValue, setMetaValue } from './db';
 import { toast } from 'react-toastify';
 
 const now = () => new Date().toISOString();
+const LAST_SYNC_KEY = 'FinSync:lastSyncTime';
+
+const getLastSyncTime = async () => {
+  const rec = await getMetaValue(LAST_SYNC_KEY);
+  return rec?.value ?? null;
+};
+
+const setLastSyncTime = async (timestamp) => {
+  await setMetaValue(LAST_SYNC_KEY, timestamp);
+};
 
 const withDefaults = (item, groupId) => ({
   ...item,
@@ -30,15 +40,14 @@ export const getUserGroups = async () => {
 };
 
 // === Pull remote data for one group into the local IndexedDB ===
-// This routine fetches all transactions and categories for `groupId`
-// from Firestore and merges them with whatever is stored locally, using
-// `lastModified` timestamps to decide which version wins.
-const syncGroupFromFirestore = async (groupId) => {
+// This routine fetches changed transactions and categories for `groupId`
+// from Firestore and merges them with local store, using `lastModified`.
+const syncGroupFromFirestore = async (groupId, lastSync = null) => {
   const localDB = await initDB();
 
-  // 1. Sync transactions collection
-  // fetch every remote transaction belonging to this group
-  const txnRef = collection(db, 'groups', groupId, 'transactions');
+  // 1. Sync transactions collection (only changed since last sync, if present)
+  const txnCollection = collection(db, 'groups', groupId, 'transactions');
+  const txnRef = lastSync ? query(txnCollection, where('lastModified', '>', lastSync)) : txnCollection;
   const txnSnap = await getDocs(txnRef);
   const txnTx = localDB.transaction('transactions', 'readwrite');
   const txnStore = txnTx.store;
@@ -73,7 +82,8 @@ const syncGroupFromFirestore = async (groupId) => {
   await txnTx.done; // Commit transactions
 
   // 2. Sync categories collection (the same merging logic as above)
-  const catRef = collection(db, 'groups', groupId, 'categories');
+  const catCollection = collection(db, 'groups', groupId, 'categories');
+  const catRef = lastSync ? query(catCollection, where('lastModified', '>', lastSync)) : catCollection;
   const catSnap = await getDocs(catRef);
   const catTx = localDB.transaction('categories', 'readwrite');
   const catStore = catTx.store;
@@ -111,16 +121,19 @@ const syncGroupFromFirestore = async (groupId) => {
 // Walk every transaction and category stored locally and upload
 // modifications to the corresponding group's subcollection.  Running
 // this before the pull step ensures the remote side sees the latest edits.
-export const syncToFirestore = async () => {
+export const syncToFirestore = async (lastSync = null) => {
   const user = auth.currentUser;
   if (!user) return;
 
   const localDB = await initDB();
 
   // --- handle transactions first ---
-  // load every transaction from the local database so they can be grouped
+  // load matching local transactions from the local database so they can be grouped
   const tx = localDB.transaction('transactions', 'readonly');
-  const localTransactions = await tx.store.getAll();
+  const allLocalTransactions = await tx.store.getAll();
+  const localTransactions = lastSync
+    ? allLocalTransactions.filter(txn => new Date(txn.lastModified) > new Date(lastSync))
+    : allLocalTransactions;
 
   // Rather than blindly overwriting remote documents, we compare
   // timestamps.  To minimize repeated reads we first bucket the local
@@ -136,12 +149,12 @@ export const syncToFirestore = async () => {
 
   for (const [groupId, txns] of Object.entries(txnsByGroup)) {
     if (!groupId || groupId === 'undefined') continue; // Skip invalid groups
-    const cloudRef = collection(db, 'groups', groupId, 'transactions');
-    // Fetching every document in the cloud collection costs one read per
-    // item, but it allows accurate timestamp comparison.  A future
-    // optimization might track dirty flags instead of pulling the whole set.
+    const cloudCollection = collection(db, 'groups', groupId, 'transactions');
+    const cloudQuery = lastSync
+      ? query(cloudCollection, where('lastModified', '>', lastSync))
+      : cloudCollection;
 
-    const cloudSnap = await getDocs(cloudRef);
+    const cloudSnap = await getDocs(cloudQuery);
     const cloudMap = new Map(cloudSnap.docs.map(d => [d.id, d.data()]));
 
     for (const txn of txns) {
@@ -150,7 +163,7 @@ export const syncToFirestore = async () => {
       const cloudTime = new Date(cloudTxn?.lastModified || 0);
 
       if (!cloudTxn || localTime > cloudTime) {
-        await setDoc(doc(cloudRef, String(txn.id)), {
+        await setDoc(doc(cloudCollection, String(txn.id)), {
           ...txn,
           createdBy: txn.createdBy || user.uid, // ensure creator
         });
@@ -173,8 +186,11 @@ export const syncToFirestore = async () => {
 
   for (const [groupId, cats] of Object.entries(catsByGroup)) {
     if (!groupId || groupId === 'undefined') continue; // Skip invalid groups
-    const cloudRef = collection(db, 'groups', groupId, 'categories');
-    const cloudSnap = await getDocs(cloudRef);
+    const cloudCollection = collection(db, 'groups', groupId, 'categories');
+    const cloudQuery = lastSync
+      ? query(cloudCollection, where('lastModified', '>', lastSync))
+      : cloudCollection;
+    const cloudSnap = await getDocs(cloudQuery);
     const cloudMap = new Map(cloudSnap.docs.map(d => [d.id, d.data()]));
 
     for (const cat of cats) {
@@ -183,7 +199,7 @@ export const syncToFirestore = async () => {
       const cloudTime = new Date(cloudCat?.lastModified || 0);
 
       if (!cloudCat || localTime > cloudTime) {
-        await setDoc(doc(cloudRef, String(cat.id)), {
+        await setDoc(doc(cloudCollection, String(cat.id)), {
           ...cat,
           createdBy: cat.createdBy || user.uid
         });
@@ -201,16 +217,21 @@ export const syncAll = async () => {
     const user = auth.currentUser;
     if (!user) return;
 
-    // 1. Send any pending local changes up to Firestore
-    await syncToFirestore();
+    const lastSync = await getLastSyncTime();
+
+    // 1. Send any pending local changes up to Firestore (changed since last sync)
+    await syncToFirestore(lastSync);
 
     // 2. Fetch the list of groups the user belongs to and
-    //    pull down any updates for each one
+    //    pull down any updates for each one (changed since last sync)
     const myGroups = await getUserGroups();
 
     for (const group of myGroups) {
-      await syncGroupFromFirestore(group.id);
+      await syncGroupFromFirestore(group.id, lastSync);
     }
+
+    // 3. Record the sync time, so next sync is incremental
+    setLastSyncTime(now());
 
     toast.success('✅ Sync complete!');
   } catch (error) {

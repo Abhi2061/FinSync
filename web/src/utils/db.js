@@ -34,6 +34,10 @@ export const initDB = async () => {
           catStore.createIndex('name', 'name', { unique: false });
         }
       }
+
+      if (!db.objectStoreNames.contains('meta')) {
+        db.createObjectStore('meta', { keyPath: 'key' });
+      }
     }
   });
 };
@@ -107,6 +111,16 @@ export const getCategories = async (groupId) => {
     all = await db.getAll(CAT_STORE_NAME);
   }
   return all.filter(cat => !cat.deleted);
+};
+
+export const getMetaValue = async (key) => {
+  const db = await initDB();
+  return await db.get('meta', key);
+};
+
+export const setMetaValue = async (key, value) => {
+  const db = await initDB();
+  await db.put('meta', { key, value });
 };
 
 export const addTransaction = async (txn) => {
