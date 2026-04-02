@@ -110,23 +110,51 @@ exports.sendInvite = onCall(async (request) => {
 
 /**
  * Accept an invite.
- * data: { inviteId: string, groupId: string }
+ * data: { inviteId?: string, userId?: string, groupId: string }
  */
 exports.acceptInvite = onCall(async (request) => {
-    const { inviteId, groupId } = request.data;
-    const callerUid = request.auth.uid;
-
     if (!request.auth) throw new HttpsError("unauthenticated", "Must be logged in.");
 
-    const inviteRef = db.doc(`groups/${groupId}/invites/${inviteId}`);
+    const { inviteId, userId, groupId } = request.data;
+    const callerUid = request.auth.uid;
+
+    if (!groupId) {
+        throw new HttpsError("invalid-argument", "groupId is required.");
+    }
+    if (userId && userId !== callerUid) {
+        throw new HttpsError("permission-denied", "Cannot accept invite for another user.");
+    }
+
     const groupRef = db.doc(`groups/${groupId}`);
+    const invitesCollection = db.collection(`groups/${groupId}/invites`);
 
     return db.runTransaction(async (t) => {
-        const inviteDoc = await t.get(inviteRef);
         const groupDoc = await t.get(groupRef);
 
-        if (!inviteDoc.exists) throw new HttpsError("not-found", "Invite not found.");
         if (!groupDoc.exists) throw new HttpsError("not-found", "Group not found.");
+
+        let inviteRef;
+        let inviteDoc;
+
+        if (inviteId) {
+            inviteRef = db.doc(`groups/${groupId}/invites/${inviteId}`);
+            inviteDoc = await t.get(inviteRef);
+        } else {
+            const inviteQuery = await invitesCollection
+                .where("userId", "==", callerUid)
+                .where("status", "==", "pending")
+                .limit(1)
+                .get();
+
+            if (inviteQuery.empty) {
+                throw new HttpsError("not-found", "Invite not found.");
+            }
+
+            inviteRef = inviteQuery.docs[0].ref;
+            inviteDoc = await t.get(inviteRef);
+        }
+
+        if (!inviteDoc.exists) throw new HttpsError("not-found", "Invite not found.");
 
         const inviteData = inviteDoc.data();
         if (inviteData.userId !== callerUid) {
@@ -160,16 +188,39 @@ exports.acceptInvite = onCall(async (request) => {
 
 /**
  * Decline an invite.
- * data: { inviteId: string, groupId: string }
+ * data: { inviteId?: string, userId?: string, groupId: string }
  */
 exports.declineInvite = onCall(async (request) => {
-    const { inviteId, groupId } = request.data;
-    const callerUid = request.auth.uid;
-
     if (!request.auth) throw new HttpsError("unauthenticated", "Must be logged in.");
 
-    const inviteRef = db.doc(`groups/${groupId}/invites/${inviteId}`);
-    const inviteDoc = await inviteRef.get();
+    const { inviteId, userId, groupId } = request.data;
+    const callerUid = request.auth.uid;
+
+    if (!groupId) {
+        throw new HttpsError("invalid-argument", "groupId is required.");
+    }
+    if (userId && userId !== callerUid) {
+        throw new HttpsError("permission-denied", "Cannot decline invite for another user.");
+    }
+
+    let inviteRef;
+    let inviteDoc;
+
+    if (inviteId) {
+        inviteRef = db.doc(`groups/${groupId}/invites/${inviteId}`);
+        inviteDoc = await inviteRef.get();
+    } else {
+        const inviteQuery = await db.collection(`groups/${groupId}/invites`)
+            .where("userId", "==", callerUid)
+            .where("status", "==", "pending")
+            .limit(1)
+            .get();
+
+        if (inviteQuery.empty) throw new HttpsError("not-found", "Invite not found.");
+
+        inviteRef = inviteQuery.docs[0].ref;
+        inviteDoc = inviteQuery.docs[0];
+    }
 
     if (!inviteDoc.exists) throw new HttpsError("not-found", "Invite not found.");
 
@@ -183,13 +234,18 @@ exports.declineInvite = onCall(async (request) => {
 
 /**
  * Remove a member from the group.
- * data: { memberId: string, groupId: string }
+ * data: { memberId?: string, targetUserId?: string, groupId: string }
  */
 exports.removeMember = onCall(async (request) => {
-    const { memberId, groupId } = request.data;
-    const callerUid = request.auth.uid;
-
     if (!request.auth) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+    const { memberId, targetUserId, groupId } = request.data;
+    const callerUid = request.auth.uid;
+    const resolvedMemberId = memberId || targetUserId;
+
+    if (!groupId || !resolvedMemberId) {
+        throw new HttpsError("invalid-argument", "groupId and memberId are required.");
+    }
 
     const groupRef = db.doc(`groups/${groupId}`);
     const groupDoc = await groupRef.get();
@@ -200,15 +256,16 @@ exports.removeMember = onCall(async (request) => {
         throw new HttpsError("permission-denied", "Only admin can remove members.");
     }
 
-    if (memberId === callerUid) {
+    if (resolvedMemberId === callerUid) {
         throw new HttpsError("invalid-argument", "Cannot remove yourself. Use leaveGroup instead.");
     }
 
     await groupRef.update({
-        members: admin.firestore.FieldValue.arrayRemove(memberId)
+        members: admin.firestore.FieldValue.arrayRemove(resolvedMemberId),
+        [`memberDetails.${resolvedMemberId}`]: admin.firestore.FieldValue.delete(),
     });
 
-    await logAction(groupId, "member_removed", callerUid, memberId);
+    await logAction(groupId, "member_removed", callerUid, resolvedMemberId);
     return { success: true };
 });
 
